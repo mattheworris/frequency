@@ -65,6 +65,7 @@ We run benchmarks with and recommend the same [reference hardware specified by P
 4. Running `make check` will run cargo checks for all frequency features. This is the recommended way to check your code before committing. Alternatively, you can run following for specific features:
 
     ```sh
+    make check-no-relay
     make check-local
     make check-rococo
     make check-mainnet
@@ -74,7 +75,7 @@ We run benchmarks with and recommend the same [reference hardware specified by P
 
     _Note, if you get errors complaining about missing
     dependencies (protobuf, cmake, yarn, node, jq, etc.) install them with your favorite package
-    manager(e.g. Homebrew on Mac) and re-run the command again._
+    manager(e.g. [Homebrew](https://brew.sh/) on macOS) and re-run the command again._
 
     ```sh
     rustup update
@@ -85,6 +86,7 @@ We run benchmarks with and recommend the same [reference hardware specified by P
     Above will build frequency with all frequency features. Alternatively you may run following command to build with specific features:
 
     ```sh
+    make build-no-relay
     make build-local
     make build-rococo
     make build-mainnet
@@ -97,7 +99,7 @@ project files.
 
 ### asdf Support
 
-Install the required plugins for asdf:
+Install the required plugins for [asdf](https://asdf-vm.com):
 
 ```sh
 asdf plugin-add rust
@@ -116,7 +118,7 @@ NOTE: I could find no clang plugin that worked so your system still needs clang 
 
 ## Remote Instance such as AWS EC2
 
-For remote instances running Linux, if you want to check out and build such as on an AWS EC2 instance, the process is slightly different to what is in the [Substrate documentation](https://docs.substrate.io/main-docs/install/linux/).
+For remote instances running Linux, if you want to check out and build such as on an [AWS EC2](https://aws.amazon.com/ec2) instance, the process is slightly different to what is in the [Substrate documentation](https://docs.substrate.io/main-docs/install/linux/).
 
 ### Ubuntu
 
@@ -139,16 +141,18 @@ There are 2 options to run the chain locally:
 
 _Note, Running frequency via following options does not require binary to be built or chain specs to be generated separately, and is programmed within the scripts for simplicity._
 
-1.  Collator Node in Instant/Manual Sealing Mode,
-2.  Collator Node with Local Relay Chain
+1.  Collator Node without a relay chain (in manual/instant sealing mode)
+2.  Collator Node with a local relay chain
 
-## 1. Collator Node in Instant/Manual Sealing Mode
+## 1. Collator Node without a Relay Chain
 
 ![](docs/images/local-dev-env-option-1.jpg)
 
 This option runs just one collator node without the need for a relay chain.
 
-Blocks can be triggered by calling the `engine_createBlock` RPC
+
+### Manual Sealing
+a. Blocks can be triggered by calling the `engine_createBlock` RPC
 
 ```sh
 curl http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" -d   '{ \
@@ -159,7 +163,14 @@ curl http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" -d  
     }'
 ```
 
-### Terminal: Instant Sealing
+b.  Use the "start-manual" make target to call the RPC
+Great for testing multiple items in the same block or other block formation tests.
+
+```sh
+make start-manual
+```
+
+### Instant Sealing mode
 
 Same as Manual Sealing, but will also automatically trigger the formation of a block whenever a transaction is added to the validated transaction pool.
 Great for most testing.
@@ -180,14 +191,6 @@ To stop running chain hit [Ctrl+C] in terminal where the chain was started.
 | ----------------------- | :-------------------------------: | ----------------------------------------------------------------------------------------- |
 | Frequency Collator Node | ws:`9944`, rpc`:9933`, p2p:`3033` | [127.0.0.1:9944](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944#/explorer) |
 
-### Terminal: Manual Sealing
-
-Will only form a block when the `engine_createBlock` RPC is called.
-Great for testing multiple items in the same block or other block formation tests.
-
-```sh
-make start-manual
-```
 
 ## 2. Collator Node with Local Relay Chain
 

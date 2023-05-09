@@ -19,6 +19,8 @@
 //! - pay_with_capacity
 //!
 
+// Substrate macros are tripping the clippy::expect_used lint.
+#![allow(clippy::expect_used)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
@@ -53,6 +55,8 @@ pub use types::GetStableWeight;
 pub mod types;
 
 pub mod capacity_stable_weights;
+
+use capacity_stable_weights::CAPACITY_EXTRINSIC_BASE_WEIGHT;
 
 /// Type aliases used for interaction with `OnChargeTransaction`.
 pub(crate) type OnChargeTransactionOf<T> =
@@ -251,15 +255,17 @@ impl<T: Config> Pallet<T> {
 		T::DbWeight::get().reads(2).saturating_add(T::DbWeight::get().writes(1))
 	}
 
-	pub fn compute_capacity_fee(
-		len: u32,
-		class: DispatchClass,
-		extrinsic_weight: Weight,
-	) -> BalanceOf<T> {
+	/// Compute the capacity fee for a transaction.
+	/// The fee is computed as the sum of the following:
+	/// - the weight fee, which is proportional to the weight of the transaction.
+	/// - the length fee, which is proportional to the length of the transaction;
+	/// - the base fee, which accounts for the overhead of an extrinsic.
+	/// NOTE: Changing CAPACITY_EXTRINSIC_BASE_WEIGHT will also change static capacity weights.
+	pub fn compute_capacity_fee(len: u32, extrinsic_weight: Weight) -> BalanceOf<T> {
 		let weight_fee = Self::weight_to_fee(extrinsic_weight);
 
 		let len_fee = Self::length_to_fee(len);
-		let base_fee = Self::weight_to_fee(T::BlockWeights::get().get(class).base_extrinsic);
+		let base_fee = Self::weight_to_fee(CAPACITY_EXTRINSIC_BASE_WEIGHT);
 
 		let fee = base_fee.saturating_add(weight_fee).saturating_add(len_fee);
 		fee
@@ -364,8 +370,7 @@ where
 			calls_weight_sum = calls_weight_sum.saturating_add(call_weight);
 		}
 
-		let fee =
-			Pallet::<T>::compute_capacity_fee(len as u32, DispatchClass::Normal, calls_weight_sum);
+		let fee = Pallet::<T>::compute_capacity_fee(len as u32, calls_weight_sum);
 
 		let fee = T::OnChargeCapacityTransaction::withdraw_fee(key, fee.into())?;
 
