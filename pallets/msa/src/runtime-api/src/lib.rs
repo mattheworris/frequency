@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::unnecessary_mut_passed)]
+#![allow(rustdoc::bare_urls)]
 // Strong Documentation Lints
 #![deny(
 	rustdoc::broken_intra_doc_links,
@@ -40,7 +41,8 @@ sp_api::decl_runtime_apis! {
 		/// Check to see if a delegation existed between the given delegator and provider at a given block
 		fn has_delegation(delegator: DelegatorId, provider: ProviderId, block_number: BlockNumber, schema_id: Option<SchemaId>) -> bool;
 
-		/// Get the list of schema ids (if any) that exist in any delegation between the delegator and provider
-		fn get_granted_schemas_by_msa_id(delegator: DelegatorId, provider: ProviderId) -> Option<Vec<SchemaId>>;
+		/// Get the list of schema permission grants (if any) that exist in any delegation between the delegator and provider
+		/// The returned list contains both schema id and the block number at which permission was revoked (0 if currently not revoked)
+		fn get_granted_schemas_by_msa_id(delegator: DelegatorId, provider: ProviderId) -> Option<Vec<SchemaGrant<SchemaId, BlockNumber>>>;
 	}
 }

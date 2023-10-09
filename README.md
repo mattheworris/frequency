@@ -12,7 +12,7 @@
 [![Issues][issues-shield]][issues-url]
 [![Codecov][codecov-shield]][codecov-url]
 
-Frequency is a Polkadot parachain designed to run Decentralized Social Network Protocol (DSNP), but it could run other things.
+Frequency is a [Polkadot](https://www.parity.io/technologies/polkadot) parachain for data distribution protocols such as [DSNP](https://www.dsnp.org).
 
 # Table of Contents
 
@@ -25,9 +25,10 @@ Frequency is a Polkadot parachain designed to run Decentralized Social Network P
   - [Remote Instance such as AWS EC2](#remote-instance-such-as-aws-ec2)
     - [Ubuntu](#ubuntu)
 - [Run](#run)
-  - [1. Collator Node in Instant/Manual Sealing Mode](#1-collator-node-in-instantmanual-sealing-mode)
-    - [Terminal: Instant Sealing](#terminal-instant-sealing)
-    - [Terminal: Manual Sealing](#terminal-manual-sealing)
+  - [1. Collator Node without a Relay Chain](#1-collator-node-without-a-relay-chain)
+    - [Manual Sealing](#manual-sealing)
+    - [Instant Sealing](#instant-sealing)
+    - [Interval Sealing](#interval-sealing)
   - [2. Collator Node with Local Relay Chain](#2-collator-node-with-local-relay-chain)
     - [Mixed Terminal/Docker](#mixed-terminaldocker)
       - [Stop and Clean Environment](#stop-and-clean-environment)
@@ -36,9 +37,13 @@ Frequency is a Polkadot parachain designed to run Decentralized Social Network P
     - [Integration Tests](#integration-tests)
   - [Run Benchmarks](#run-benchmarks)
 - [Format, Lint and Audit Source Code](#format-lint-and-audit-source-code)
-- [Verify Runtime](#verify-runtime)
-- [Local Runtime Upgrade](#local-runtime-upgrade)
+- [Runtime](#runtime)
+  - [Verify Runtime](#verify-runtime)
+  - [Local Runtime Upgrade](#local-runtime-upgrade)
+    - [Local Relay Chain](#local-relay-chain)
+    - [Standalone Chain (No Relay)](#standalone-chain-no-relay)
 - [Contributing](#contributing)
+- [Security Issue Reporting](#security-issue-reporting)
 - [Additional Resources](#additional-resources)
 - [Miscellaneous](#miscellaneous)
 
@@ -49,11 +54,11 @@ Frequency is a Polkadot parachain designed to run Decentralized Social Network P
 
 ---
 
--   For Mac users, [Docker Desktop](https://docs.docker.com/desktop/mac/install/) engine also installs docker compose environment, so no need to install it separately.
+- For Mac users, [Docker Desktop](https://docs.docker.com/desktop/mac/install/) engine also installs docker compose environment, so no need to install it separately.
 
 ## Hardware
 
-We run benchmarks with and recommend the same [reference hardware specified by Parity](https://wiki.polkadot.network/docs/maintain-guides-how-to-validate-polkadot#reference-hardware).
+We run benchmarks with and recommend the same [reference hardware specified by Parity for Validators](https://wiki.polkadot.network/docs/maintain-guides-how-to-validate-polkadot#reference-hardware).
 
 # Build
 
@@ -62,7 +67,7 @@ We run benchmarks with and recommend the same [reference hardware specified by P
 1. Install Rust using the [official instructions](https://www.rust-lang.org/tools/install).
 2. Check out this repository
 3. `rust-toolchain.toml` specifies the standard toolchain to use. If you have `rustup` installed, it will automatically install the correct toolchain when you run any cargo command.
-4. Running `make check` will run cargo checks for all frequency features. This is the recommended way to check your code before committing. Alternatively, you can run following for specific features:
+4. Running `make check` will run cargo checks for all Frequency features. This is the recommended way to check your code before committing. Alternatively, you can run following for specific features:
 
     ```sh
     make check-no-relay
@@ -71,7 +76,7 @@ We run benchmarks with and recommend the same [reference hardware specified by P
     make check-mainnet
     ```
 
-5. Build Wasm and native code.
+5. Build [Wasm](https://webassembly.org) and native code.
 
     _Note, if you get errors complaining about missing
     dependencies (protobuf, cmake, yarn, node, jq, etc.) install them with your favorite package
@@ -83,7 +88,7 @@ We run benchmarks with and recommend the same [reference hardware specified by P
     make build
     ```
 
-    Above will build frequency with all frequency features. Alternatively you may run following command to build with specific features:
+    Above will build Frequency with all features. Alternatively you may run following command to build with specific features:
 
     ```sh
     make build-no-relay
@@ -92,20 +97,20 @@ We run benchmarks with and recommend the same [reference hardware specified by P
     make build-mainnet
     ```
 
-    To build local, rococo or mainnet features respectively.
+    To build local, rococo (testnet) or mainnet features respectively.
 
-At this point you should have `./target/release` directory generated locally with compiled
-project files.
+At this point you should have `./target/debug` directory generated locally with compiled project files. (or `./target/release` for `make build-*-release`)
 
 ### asdf Support
 
+Frequency optionally supports [asdf](https://asdf-vm.com) for managing dependencies of the following tools:
 Install the required plugins for [asdf](https://asdf-vm.com):
+Please note that if you use rustup, asdf may conflict and cause issues. It is recommended to use one or the other, but not both for rust.
 
 ```sh
 asdf plugin-add rust
 asdf plugin-add make
 asdf plugin-add cmake https://github.com/srivathsanmurali/asdf-cmake.git
-asdf plugin-add protoc https://github.com/paxosglobal/asdf-protoc.git
 ```
 
 Install the dependency versions declared in `.tool-versions`
@@ -114,7 +119,7 @@ Install the dependency versions declared in `.tool-versions`
 asdf install
 ```
 
-NOTE: I could find no clang plugin that worked so your system still needs clang to be installed.
+NOTE: asdf does not support clang and it needs to be installed separately.
 
 ## Remote Instance such as AWS EC2
 
@@ -131,17 +136,17 @@ sudo apt install —-assume-yes build-essential
 sudo apt install --assume-yes clang curl libssl-dev cmake
 ```
 
-2. Follow [official instructions to install rust](https://www.rust-lang.org/tools/install), but select `3. customize the installation`, then reply **n** to `Modify PATH variable? (Y/n)`
+2. Follow [official instructions to install Rust](https://www.rust-lang.org/tools/install), but select `3. customize the installation`, then reply **n** to `Modify PATH variable? (Y/n)`
 3. Follow steps 6-10 at [Substrate: Linux development](https://docs.substrate.io/main-docs/install/linux/)
-4. Proceed with checking out and building frequency as above.
+4. Proceed with checking out and building Frequency as above.
 
 # Run
 
 There are 2 options to run the chain locally:
 
-_Note, Running frequency via following options does not require binary to be built or chain specs to be generated separately, and is programmed within the scripts for simplicity._
+_Note, Running Frequency via following options does not require binary to be built or chain specs to be generated separately, and is programmed within the scripts for simplicity._
 
-1.  Collator Node without a relay chain (in manual/instant sealing mode)
+1.  Collator Node without a relay chain (in manual/instant/interval sealing mode)
 2.  Collator Node with a local relay chain
 
 ## 1. Collator Node without a Relay Chain
@@ -150,12 +155,11 @@ _Note, Running frequency via following options does not require binary to be bui
 
 This option runs just one collator node without the need for a relay chain.
 
-
 ### Manual Sealing
 a. Blocks can be triggered by calling the `engine_createBlock` RPC
 
 ```sh
-curl http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" -d   '{ \
+curl http://localhost:9944 -H "Content-Type:application/json;charset=utf-8" -d   '{ \
     "jsonrpc":"2.0", \
     "id":1, \
     "method":"engine_createBlock", \
@@ -170,7 +174,7 @@ Great for testing multiple items in the same block or other block formation test
 make start-manual
 ```
 
-### Instant Sealing mode
+### Instant Sealing
 
 Same as Manual Sealing, but will also automatically trigger the formation of a block whenever a transaction is added to the validated transaction pool.
 Great for most testing.
@@ -182,15 +186,23 @@ make start
 Also available as a Docker image: [`frequencychain/instant-seal-node`](https://hub.docker.com/r/frequencychain/instant-seal-node)
 
 ```sh
-docker run --rm -p 9944:9944 -p 9933:9933 -p 30333:30333 frequencychain/instant-seal-node
+docker run --rm -p 9944:9944 -p 30333:30333 frequencychain/instant-seal-node
 ```
 
 To stop running chain hit [Ctrl+C] in terminal where the chain was started.
 
 | **Node**                |             **Ports**             | **Explorer URL**                                                                          |
 | ----------------------- | :-------------------------------: | ----------------------------------------------------------------------------------------- |
-| Frequency Collator Node | ws:`9944`, rpc`:9933`, p2p:`3033` | [127.0.0.1:9944](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944#/explorer) |
+| Frequency Collator Node | ws and rpc:`9944`, p2p:`3033`     | [127.0.0.1:9944](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944#/explorer) |
 
+
+### Interval Sealing
+
+This sealing mode will automatically trigger the formation of a block at a specified interval (default is every 12 seconds.)
+
+```sh
+make start-interval
+```
 
 ## 2. Collator Node with Local Relay Chain
 
@@ -212,13 +224,8 @@ This option runs one collator node as local host process and two relay chain val
     ```sh
     make register
     ```
-1. Generate chain spec files. If this is your first time running the project or
-   new pallets/runtime code changes have been made to Frequency, then the chain specs
-   need to be generated. Refer to [generation spec file](#generate-a-new-spec-file)
-   for more details.
 
-1. Start Frequency as parachain. This step will generate genesis/wasm and onboard the
-   parachain.
+1. Start Frequency as parachain. This step will generate genesis/wasm and start the parachain collator.
 
     ```sh
     make start-frequency
@@ -231,8 +238,8 @@ This option runs one collator node as local host process and two relay chain val
 
 #### Stop and Clean Environment
 
-1. Off-board Frequency from relay chain.: `make offboard`
-2. to stop Frequency running in the terminal: `[Ctrl+C] `
+1. Off-board Frequency from relay chain: `make offboard`
+2. To stop Frequency running in the terminal: `[Ctrl+C] `
 3. Stop the relay chain. `make stop-relay`
 4. Run to remove unused volumes. `make docker-prune`
 5. Clean up temporary directory to avoid any conflicts with next onboarding:
@@ -256,9 +263,9 @@ make stop-frequency-docker
 
 | **Node**             | **Ports**                           | **Explorer URL**                                                                          |
 | -------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| Frequency Relay Node | ws:`9944`, rpc`:9933`, p2p:`30333`  | [127.0.0.1:9944](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944#/explorer) |
-| Alice Relay Node     | ws:`:9946`, rpc`:9935`, p2p:`30335` | [127.0.0.1:9946](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9946#/explorer) |
-| Bob Relay Node       | ws:`:9947`, rpc`:9936`, p2p:`30336` | [127.0.0.1:9947](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9947#/explorer) |
+| Frequency Relay Node | ws and rpc: `9944`, p2p:`30333`     | [127.0.0.1:9944](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944#/explorer) |
+| Alice Relay Node     | ws and rpc: `9946`, p2p:`30335`     | [127.0.0.1:9946](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9946#/explorer) |
+| Bob Relay Node       | ws and rpc: `9947`, p2p:`30336`     | [127.0.0.1:9947](https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9947#/explorer) |
 
 ## Run Tests
 
@@ -281,33 +288,42 @@ make benchmarks
 
 # Format, Lint and Audit Source Code
 
--   Format code with `make format` according to style guidelines and configurations in `rustfmt.toml`.
--   Lint code with `make lint` to catch common mistakes and improve your [Rust](https://github.com/rust-lang/rust) code.
--   Alternatively, run `make format-lint` to run both at the same time.
--   Run `cargo-deny` to audit Cargo.lock files for crates with security vulnerabilities reported to the RustSec Advisory Database. [See cargo-deny installation instructions](https://github.com/EmbarkStudios/cargo-deny)
+- Format code with `make format` according to style guidelines and configurations in `rustfmt.toml`.
+- Lint code with `make lint` to catch common mistakes and improve your [Rust](https://github.com/rust-lang/rust) code.
 
-# Verify Runtime
+    _Note, if you get errors complaining about the wasm build, then you may need to install
+    the wasm target for rust. You can do this with `rustup target add wasm32-unknown-unknown`
+
+- Alternatively, run `make format-lint` to run both at the same time.
+- Run `cargo-deny` to audit `Cargo.lock` files for crates with security vulnerabilities reported to the [RustSec Advisory Database](https://rustsec.org). [See cargo-deny installation instructions](https://github.com/EmbarkStudios/cargo-deny)
+
+# Runtime
+
+## Verify Runtime
 
 1. Check out the commit at which the runtime was built.
-2. Use srtool to verify the runtime:
+2. Use [srtool](https://github.com/paritytech/srtool) and [srtool-cli](https://github.com/chevdor/srtool-cli) to verify the runtime:
     ```sh
-    TARGET=build-runtime RUST_TOOLCHAIN=nightly ./tools/scripts/build.sh
+    SRTOOL_TAG="1.66.1" srtool build \
+            --build-opts="'--features on-chain-release-build,no-metadata-docs,frequency'" \
+            --profile=release \
+            --package=frequency-runtime \
+            --root
     ```
 
-# Local Runtime Upgrade
+## Local Runtime Upgrade
 
 To upgrade the runtime, run the following command:
 
+### Local Relay Chain
 ```sh
 make upgrade-local
 ```
 
-The current scripts follow this process for upgrading locally:
-
-1. Build new runtime and generate the compressed wasm: `make specs-rococo-2000`
-2. Call `authorizeUpgrade` extrinsic from parachain system to initiate the upgrade.
-3. Call `enactAuthorizedUpgrade` extrinsic from parachain system to enact the upgrade.
-4. For testnet and mainnet, the upgrade is done slightly differently using `scheduler` and enactment is scheduled for a specific block number in the future.
+### Standalone Chain (No Relay)
+```sh
+make upgrade-no-relay
+```
 
 # Contributing
 
@@ -315,11 +331,16 @@ Interested in contributing?
 Wonderful!
 Please check out [the information here](./CONTRIBUTING.md).
 
+# Security Issue Reporting
+
+Do you know of an on-chain vulnerability (or possible one) that can lead to economic loss, privacy loss, or instability of the network?
+Please report it to [security@frequency.xyz](mailto:security@frequency.xyz)
+
 # Additional Resources
 
--   [Cumulus Project](https://github.com/paritytech/cumulus)
--   [Cumulus Tutorials](https://docs.substrate.io/tutorials/)
--   [Prep Substrate environment for development](https://docs.substrate.io/install/)
+- [Cumulus Project](https://github.com/paritytech/cumulus)
+- [Cumulus Tutorials](https://docs.substrate.io/tutorials/)
+- [Prep Substrate environment for development](https://docs.substrate.io/install/)
 
 # Miscellaneous
 

@@ -25,10 +25,10 @@ COPY --from=base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificat
 COPY --chown=frequency target/release/frequency ./frequency/
 RUN chmod +x ./frequency/frequency
 
-# 9933 P2P port
 # 9944 for RPC call
-# 30333 for Websocket
-EXPOSE 9933 9944 30333
+# 30333 for p2p
+# 9615 for Telemetry (prometheus)
+EXPOSE 9944 30333 9615
 
 VOLUME ["/data"]
 
@@ -39,14 +39,12 @@ ENTRYPOINT ["/frequency/frequency", \
 	"--no-telemetry", \
 	"--no-prometheus", \
 	"--port=30333", \
-	"--rpc-port=9933", \
-	"--ws-port=9944", \
+	"--rpc-port=9944", \
 	"--rpc-external", \
 	"--rpc-cors=all", \
-	"--ws-external", \
 	"--rpc-methods=Unsafe", \
 	"--base-path=/data" \
 	]
 
 # Params which can be overriden from CLI
-CMD ["--instant-sealing"]
+CMD ["--sealing=instant"]

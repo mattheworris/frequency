@@ -45,7 +45,7 @@ all-features = false
 no-default-features = false
 # If set, these feature will be enabled when collecting metadata. If `--features`
 # is specified on the cmd line they will take precedence over this option.
-features = ["all-frequency-features", "std"]
+features = ["frequency-lint-check", "std"]
 # When outputting inclusion graphs in diagnostics that include features, this
 # option can be used to specify the depth at which feature edges will be added.
 # This option is included since the graphs can be quite large and the addition
@@ -81,13 +81,13 @@ ignore = [
     # Substrate dependency deprecation
     #   See https://github.com/paritytech/substrate/issues/12430
     "RUSTSEC-2021-0139",
-    # Substrate dependency. Does not effect WASM and dependencies do not appear to use effected functions
-    "RUSTSEC-2020-0071",
     # Substrate depednency
     #    Windows issue, does not effect Frequency
     "RUSTSEC-2021-0145",
     # There is no suitable replacement for mach and the mach2 crate has not been vetted.
     "RUSTSEC-2020-0168",
+    # ed25519-dalek does not have a release for the changed apis yet
+    "RUSTSEC-2022-0093",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories

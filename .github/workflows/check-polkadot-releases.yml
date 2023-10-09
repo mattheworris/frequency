@@ -3,7 +3,7 @@ on:
   schedule:
     - cron: "0 0 * * *" # midnight (UTC)
 env:
-  REPO_URL: https://api.github.com/repos/paritytech/polkadot
+  REPO_URL: https://api.github.com/repos/paritytech/polkadot-sdk
   TRACKING_GIT_BRANCH: ci/latest-polkadot-full-release
   RELEASE_TRACK_FILENAME: .github/.latest-polkadot-full-release.txt
 jobs:
@@ -13,7 +13,7 @@ jobs:
       - name: Timestamp
         run: date
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{env.TRACKING_GIT_BRANCH}}
           token: ${{secrets.GHA_RECORD_POLKADOT_RELEASE}}

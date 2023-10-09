@@ -1,7 +1,7 @@
 UNAME := $(shell uname)
 
 .PHONY: all
-all: start
+all: build
 
 .PHONY: clean
 clean:
@@ -10,6 +10,9 @@ clean:
 .PHONY: start
 start:
 	./scripts/init.sh start-frequency-instant
+
+start-native:
+	./scripts/init.sh start-frequency-native
 
 start-relay:
 	./scripts/init.sh start-relay-chain
@@ -23,6 +26,9 @@ start-frequency-docker:
 start-manual:
 	./scripts/init.sh start-frequency-manual
 
+start-interval:
+	./scripts/init.sh start-frequency-interval
+
 .PHONY: stop
 stop-relay:
 	./scripts/init.sh stop-relay-chain
@@ -32,7 +38,7 @@ stop-frequency-docker:
 
 .PHONY: local-block
 local-block:
-	curl http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" -d   '{ \
+	curl http://localhost:9944 -H "Content-Type:application/json;charset=utf-8" -d   '{ \
 		"jsonrpc":"2.0", \
 		"id":1, \
 		"method":"engine_createBlock", \
@@ -65,7 +71,7 @@ format:
 .PHONY: lint
 lint:
 	cargo fmt --check
-	SKIP_WASM_BUILD=1 env -u RUSTFLAGS cargo clippy --features runtime-benchmarks,all-frequency-features -- -D warnings
+	SKIP_WASM_BUILD=1 env -u RUSTFLAGS cargo clippy --features runtime-benchmarks,frequency-lint-check -- -D warnings
 	RUSTDOCFLAGS="--enable-index-page --check -Zunstable-options" cargo doc --no-deps --features frequency
 
 lint-audit:
@@ -139,7 +145,7 @@ benchmarks:
 
 #
 # Target to run benchmarks for local development. Uses the "bench-dev" profile,
-# since "production" is unnecessary in local development, and by using "bench-dev"
+# since "release" is unnecessary in local development, and by using "bench-dev"
 # (which is just a clone of "release"), we don't overwrite our "release" target used
 # for development testing.
 .PHONY: benchmarks-local
@@ -180,19 +186,19 @@ docker-prune:
 
 .PHONY: check
 check:
-	SKIP_WASM_BUILD= cargo check --features runtime-benchmarks,all-frequency-features
+	SKIP_WASM_BUILD= cargo check --features runtime-benchmarks,frequency-lint-check
 
 check-no-relay:
-	SKIP_WASM_BUILD= cargo check --features  frequency-no-relay
+	SKIP_WASM_BUILD= cargo check --features frequency-no-relay
 
 check-local:
-	SKIP_WASM_BUILD= cargo check --features  frequency-rococo-local
+	SKIP_WASM_BUILD= cargo check --features frequency-rococo-local
 
 check-rococo:
-	SKIP_WASM_BUILD= cargo check --features  frequency-rococo-testnet
+	SKIP_WASM_BUILD= cargo check --features frequency-rococo-testnet
 
 check-mainnet:
-	SKIP_WASM_BUILD= cargo check --features  frequency
+	SKIP_WASM_BUILD= cargo check --features frequency
 
 .PHONY: js
 js:
@@ -200,32 +206,32 @@ js:
 
 .PHONY: build
 build:
-	cargo build --locked --release --features all-frequency-features
+	cargo build --features frequency-no-relay
 
 build-benchmarks:
-	cargo build --profile production --features runtime-benchmarks --features all-frequency-features --workspace
+	cargo build --release --features runtime-benchmarks,frequency-lint-check --workspace
 
 build-no-relay:
-	cargo build --locked --features  frequency-no-relay
+	cargo build --features frequency-no-relay
 
 build-local:
-	cargo build --locked --features  frequency-rococo-local
+	cargo build --features frequency-rococo-local
 
 build-rococo:
-	cargo build --locked --release --features  frequency-rococo-testnet
+	cargo build --features frequency-rococo-testnet
 
 build-mainnet:
-	cargo build --locked --release --features  frequency
+	cargo build --features frequency
 
 build-rococo-release:
-	cargo build --locked --features  frequency-rococo-testnet --profile production
+	cargo build --locked --features frequency-rococo-testnet --release
 
 build-mainnet-release:
-	cargo build --locked --features  frequency --profile production
+	cargo build --locked --features  frequency --release
 
 .PHONY: test
 test:
-	cargo test --workspace --locked --features runtime-benchmarks,all-frequency-features
+	cargo test --workspace --features runtime-benchmarks,frequency-lint-check
 
 integration-test:
 	./scripts/run_integration_tests.sh
@@ -239,17 +245,23 @@ integration-test-load:
 integration-test-load-only:
 	./scripts/run_integration_tests.sh -s load
 
+integration-test-rococo:
+	./scripts/run_integration_tests.sh -c rococo_testnet
+
+integration-test-rococo-local:
+	./scripts/run_integration_tests.sh -c rococo_local
+
 .PHONY: try-runtime
 try-runtime:
-	cargo run --release --features all-frequency-features,try-runtime try-runtime --help
+	cargo run --release --features frequency-lint-check,try-runtime try-runtime --help
 
 try-runtime-upgrade-rococo:
 	cargo build --release --features frequency-rococo-testnet,try-runtime
-	cargo run --release --features all-frequency-features,try-runtime try-runtime --runtime ./target/release/wbuild/frequency-runtime/frequency_runtime.wasm on-runtime-upgrade --checks live --uri wss://rpc.rococo.frequency.xyz:443
+	cargo run --release --features frequency-lint-check,try-runtime try-runtime --runtime ./target/release/wbuild/frequency-runtime/frequency_runtime.wasm on-runtime-upgrade --checks live --uri wss://rpc.rococo.frequency.xyz:443
 
 try-runtime-upgrade-mainnet:
 	cargo build --release --features frequency,try-runtime
-	cargo run --release --features all-frequency-features,try-runtime try-runtime --runtime ./target/release/wbuild/frequency-runtime/frequency_runtime.wasm on-runtime-upgrade --checks live --uri wss://1.rpc.frequency.xyz:443
+	cargo run --release --features frequency-lint-check,try-runtime try-runtime --runtime ./target/release/wbuild/frequency-runtime/frequency_runtime.wasm on-runtime-upgrade --checks live --uri wss://1.rpc.frequency.xyz:443
 
 # Pull the Polkadot version from the polkadot-cli package in the Cargo.lock file.
 # This will break if the lock file format changes

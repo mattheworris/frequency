@@ -36,6 +36,7 @@
 #![allow(clippy::expect_used)]
 // Ensure we're `no_std` when compiling for Wasm.
 #![cfg_attr(not(feature = "std"), no_std)]
+#![feature(rustdoc_missing_doc_code_examples)]
 // Strong Documentation Lints
 #![deny(
 	rustdoc::broken_intra_doc_links,
@@ -117,7 +118,6 @@ pub mod pallet {
 	}
 
 	#[pallet::pallet]
-	#[pallet::generate_store(pub(super) trait Store)]
 	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
 
@@ -182,9 +182,6 @@ pub mod pallet {
 			schema_id: SchemaId,
 			/// The block number for these messages
 			block_number: T::BlockNumber,
-			/// `DEPRECATED` - Number of messages in this block for this schema
-			/// Value does not reflect the actual count and it will be removed in June 2023
-			count: u16,
 		},
 	}
 
@@ -253,7 +250,6 @@ pub mod pallet {
 					Self::deposit_event(Event::MessagesStored {
 						schema_id,
 						block_number: current_block,
-						count: 1, // hardcoded to 1 for backwards compatibility
 					});
 				}
 				Ok(())
@@ -325,7 +321,6 @@ pub mod pallet {
 					Self::deposit_event(Event::MessagesStored {
 						schema_id,
 						block_number: current_block,
-						count: 1, // hardcoded to 1 for backwards compatibility
 					});
 				}
 

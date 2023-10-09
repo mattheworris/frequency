@@ -1,6 +1,6 @@
 import { Keyring } from "@polkadot/api";
 import { KeyringPair } from "@polkadot/keyring/types";
-import { u16, u32, u64, Option} from "@polkadot/types";
+import { u16, u32, u64, Option, u128} from "@polkadot/types";
 import { Codec } from "@polkadot/types/types";
 import { u8aToHex, u8aWrapBytes } from "@polkadot/util";
 import { mnemonicGenerate } from '@polkadot/util-crypto';
@@ -8,22 +8,26 @@ import { env } from "./env";
 import {
   AddKeyData,
   AddProviderPayload,
+  EventMap,
   ExtrinsicHelper,
-  ItemizedSignaturePayload, PaginatedDeleteSignaturePayload,
-  PaginatedUpsertSignaturePayload
+  ItemizedSignaturePayload, ItemizedSignaturePayloadV2, PaginatedDeleteSignaturePayload,
+  PaginatedDeleteSignaturePayloadV2, PaginatedUpsertSignaturePayload, PaginatedUpsertSignaturePayloadV2
 } from "./extrinsicHelpers";
 import { EXISTENTIAL_DEPOSIT } from "./rootHooks";
-import {HandleResponse, MessageSourceId, PageHash} from "@frequency-chain/api-augment/interfaces";
+import {HandleResponse, MessageSourceId, PageHash, SchemaGrantResponse} from "@frequency-chain/api-augment/interfaces";
 import assert from "assert";
 import { firstValueFrom } from "rxjs";
 import { AVRO_GRAPH_CHANGE } from "../schemas/fixtures/avroGraphChangeSchemaType";
+import { PARQUET_BROADCAST } from "../schemas/fixtures/parquetBroadcastSchemaType";
+import { AVRO_CHAT_MESSAGE } from "../stateful-pallet-storage/fixtures/itemizedSchemaType";
 
-export interface DevAccount {
+export interface Account {
   uri: string,
   keys: KeyringPair,
 }
 
-export let devAccounts: DevAccount[] = [];
+export let devAccounts: Account[] = [];
+export let rococoAccounts: Account[] = [];
 
 export type Sr25519Signature = { Sr25519: `0x${string}` }
 
@@ -31,15 +35,20 @@ export const TEST_EPOCH_LENGTH = 10;
 export const CENTS = 1000000n;
 export const DOLLARS = 100n * CENTS;
 export const STARTING_BALANCE = 6n * CENTS + DOLLARS;
+export const CHAIN_ENVIRONMENT = {
+  DEVELOPMENT: "dev",
+  ROCOCO_TESTNET: "rococo-testnet",
+  ROCOCO_LOCAL: "rococo-local",
+}
 
 export function signPayloadSr25519(keys: KeyringPair, data: Codec): Sr25519Signature {
   return { Sr25519: u8aToHex(keys.sign(u8aWrapBytes(data.toU8a()))) }
 }
 
-export async function generateDelegationPayload(payloadInputs: AddProviderPayload, expirationOffset?: number): Promise<AddProviderPayload> {
+export async function generateDelegationPayload(payloadInputs: AddProviderPayload, expirationOffset: number = 100, blockNumber?: number): Promise<AddProviderPayload> {
   let { expiration, ...payload } = payloadInputs;
   if (!expiration) {
-    expiration = (await getBlockNumber()) + (expirationOffset || 5);
+    expiration = (blockNumber || (await getBlockNumber())) + expirationOffset;
   }
 
   return {
@@ -52,7 +61,7 @@ export async function getBlockNumber(): Promise<number> {
   return (await ExtrinsicHelper.getLastBlock()).block.header.number.toNumber()
 }
 
-export async function generateAddKeyPayload(payloadInputs: AddKeyData, expirationOffset: number = 5, blockNumber?: number): Promise<AddKeyData> {
+export async function generateAddKeyPayload(payloadInputs: AddKeyData, expirationOffset: number = 100, blockNumber?: number): Promise<AddKeyData> {
   let { expiration, ...payload } = payloadInputs;
   if (!expiration) {
     expiration = (blockNumber || (await getBlockNumber())) + expirationOffset;
@@ -64,10 +73,10 @@ export async function generateAddKeyPayload(payloadInputs: AddKeyData, expiratio
   }
 }
 
-export async function generateItemizedSignaturePayload(payloadInputs: ItemizedSignaturePayload, expirationOffset?: number): Promise<ItemizedSignaturePayload> {
+export async function generateItemizedSignaturePayload(payloadInputs: ItemizedSignaturePayload, expirationOffset: number = 100, blockNumber?: number): Promise<ItemizedSignaturePayload> {
   let { expiration, ...payload } = payloadInputs;
   if (!expiration) {
-    expiration = (await ExtrinsicHelper.getLastBlock()).block.header.number.toNumber() + (expirationOffset || 5);
+    expiration = (blockNumber || (await getBlockNumber())) + expirationOffset;
   }
 
   return {
@@ -76,10 +85,10 @@ export async function generateItemizedSignaturePayload(payloadInputs: ItemizedSi
   }
 }
 
-export async function generatePaginatedUpsertSignaturePayload(payloadInputs: PaginatedUpsertSignaturePayload, expirationOffset?: number): Promise<PaginatedUpsertSignaturePayload> {
+export async function generateItemizedSignaturePayloadV2(payloadInputs: ItemizedSignaturePayloadV2, expirationOffset: number = 100, blockNumber?: number): Promise<ItemizedSignaturePayloadV2> {
   let { expiration, ...payload } = payloadInputs;
   if (!expiration) {
-    expiration = (await ExtrinsicHelper.getLastBlock()).block.header.number.toNumber() + (expirationOffset || 5);
+    expiration = (blockNumber || (await getBlockNumber())) + expirationOffset;
   }
 
   return {
@@ -88,10 +97,46 @@ export async function generatePaginatedUpsertSignaturePayload(payloadInputs: Pag
   }
 }
 
-export async function generatePaginatedDeleteSignaturePayload(payloadInputs: PaginatedDeleteSignaturePayload, expirationOffset?: number): Promise<PaginatedDeleteSignaturePayload> {
+export async function generatePaginatedUpsertSignaturePayload(payloadInputs: PaginatedUpsertSignaturePayload, expirationOffset: number = 100, blockNumber?: number): Promise<PaginatedUpsertSignaturePayload> {
   let { expiration, ...payload } = payloadInputs;
   if (!expiration) {
-    expiration = (await ExtrinsicHelper.getLastBlock()).block.header.number.toNumber() + (expirationOffset || 5);
+    expiration = (blockNumber || (await getBlockNumber())) + expirationOffset;
+  }
+
+  return {
+    expiration,
+    ...payload,
+  }
+}
+
+export async function generatePaginatedUpsertSignaturePayloadV2(payloadInputs: PaginatedUpsertSignaturePayloadV2, expirationOffset: number = 100, blockNumber?: number): Promise<PaginatedUpsertSignaturePayloadV2> {
+  let { expiration, ...payload } = payloadInputs;
+  if (!expiration) {
+    expiration = (blockNumber || (await getBlockNumber())) + expirationOffset;
+  }
+
+  return {
+    expiration,
+    ...payload,
+  }
+}
+
+export async function generatePaginatedDeleteSignaturePayload(payloadInputs: PaginatedDeleteSignaturePayload, expirationOffset: number = 100, blockNumber?: number): Promise<PaginatedDeleteSignaturePayload> {
+  let { expiration, ...payload } = payloadInputs;
+  if (!expiration) {
+    expiration = (blockNumber || (await getBlockNumber())) + expirationOffset;
+  }
+
+  return {
+    expiration,
+    ...payload,
+  }
+}
+
+export async function generatePaginatedDeleteSignaturePayloadV2(payloadInputs: PaginatedDeleteSignaturePayloadV2, expirationOffset: number = 100, blockNumber?: number): Promise<PaginatedDeleteSignaturePayloadV2> {
+  let { expiration, ...payload } = payloadInputs;
+  if (!expiration) {
+    expiration = (blockNumber || (await getBlockNumber())) + expirationOffset;
   }
 
   return {
@@ -110,15 +155,25 @@ export function createKeys(name: string = 'first pair'): KeyringPair {
   return keypair;
 }
 
+export function getDefaultFundingSource() {
+  return process.env.CHAIN_ENVIRONMENT === CHAIN_ENVIRONMENT.ROCOCO_TESTNET ? rococoAccounts[0] : devAccounts[0];
+}
+
+export function hasRelayChain() {
+  return process.env.CHAIN_ENVIRONMENT === CHAIN_ENVIRONMENT.ROCOCO_LOCAL
+    || process.env.CHAIN_ENVIRONMENT === CHAIN_ENVIRONMENT.ROCOCO_TESTNET
+}
+
 export async function fundKeypair(source: KeyringPair, dest: KeyringPair, amount: bigint, nonce?: number): Promise<void> {
   await ExtrinsicHelper.transferFunds(source, dest, amount).signAndSend(nonce);
 }
 
-export async function createAndFundKeypair(amount = EXISTENTIAL_DEPOSIT, keyName?: string, devAccount?: KeyringPair, nonce?: number): Promise<KeyringPair> {
+export async function createAndFundKeypair(amount = EXISTENTIAL_DEPOSIT, keyName?: string, source?: KeyringPair, nonce?: number): Promise<KeyringPair> {
+  const default_funding_source = getDefaultFundingSource();
   const keypair = createKeys(keyName);
 
   // Transfer funds from source (usually pre-funded dev account) to new account
-  await fundKeypair((devAccount || devAccounts[0].keys), keypair, amount, nonce);
+  await fundKeypair((source || default_funding_source.keys), keypair, amount, nonce);
 
   return keypair;
 }
@@ -146,8 +201,7 @@ export async function createDelegator(): Promise<[KeyringPair, u64]> {
   let keys = await createAndFundKeypair();
   let delegator_msa_id = new u64(ExtrinsicHelper.api.registry, 0);
   const createMsa = ExtrinsicHelper.createMsa(keys);
-  await createMsa.fundOperation();
-  const [msaCreatedEvent, _] = await createMsa.signAndSend();
+  const [msaCreatedEvent, _] = await createMsa.fundAndSend();
 
   if (msaCreatedEvent && ExtrinsicHelper.api.events.msa.MsaCreated.is(msaCreatedEvent)) {
     delegator_msa_id = msaCreatedEvent.data.msaId;
@@ -168,8 +222,7 @@ export async function createDelegatorAndDelegation(schemaId: u16, providerId: u6
   const addProviderData = ExtrinsicHelper.api.registry.createType("PalletMsaAddProvider", payload);
 
   const grantDelegationOp = ExtrinsicHelper.grantDelegation(keys, providerKeys, signPayloadSr25519(keys, addProviderData), payload);
-  await grantDelegationOp.fundOperation();
-  await grantDelegationOp.signAndSend();
+  await grantDelegationOp.fundAndSend();
 
   return [keys, delegator_msa_id];
 }
@@ -200,7 +253,8 @@ export async function createMsaAndProvider(keys: KeyringPair, providerName: stri
   Promise<u64> {
   // Create and fund a keypair with stakeAmount
   // Use this keypair for stake operations
-  await fundKeypair(devAccounts[0].keys, keys, amount);
+  const defaultFundingSource = getDefaultFundingSource();
+  await fundKeypair(defaultFundingSource.keys, keys, amount);
   const createMsaOp = ExtrinsicHelper.createMsa(keys);
   const [MsaCreatedEvent] = await createMsaOp.fundAndSend();
   assert.notEqual(MsaCreatedEvent, undefined, 'createMsaAndProvider: should have returned MsaCreated event');
@@ -255,16 +309,107 @@ export async function setEpochLength(keys: KeyringPair, epochLength: number): Pr
   }
 }
 
-export async function createGraphChangeSchema(): Promise<u16> {
-  const [createSchemaEvent, eventMap] = await ExtrinsicHelper
-    .createSchema(devAccounts[0].keys, AVRO_GRAPH_CHANGE, "AvroBinary", "OnChain")
-    .fundAndSend();
-  assert.notEqual(eventMap["system.ExtrinsicSuccess"], undefined);
-  if (createSchemaEvent && ExtrinsicHelper.api.events.schemas.SchemaCreated.is(createSchemaEvent)) {
-    return createSchemaEvent.data.schemaId;
+export async function getOrCreateGraphChangeSchema(): Promise<u16> {
+  if (process.env.CHAIN_ENVIRONMENT === CHAIN_ENVIRONMENT.ROCOCO_TESTNET) {
+    const ROCOCO_GRAPH_CHANGE_SCHEMA_ID: u16 = new u16(ExtrinsicHelper.api.registry, 53);
+    return ROCOCO_GRAPH_CHANGE_SCHEMA_ID;
   } else {
-    assert.fail("failed to create a schema")
+    const [createSchemaEvent, eventMap] = await ExtrinsicHelper
+      .createSchema(devAccounts[0].keys, AVRO_GRAPH_CHANGE, "AvroBinary", "OnChain")
+      .fundAndSend();
+    assertExtrinsicSuccess(eventMap);
+    if (createSchemaEvent && ExtrinsicHelper.api.events.schemas.SchemaCreated.is(createSchemaEvent)) {
+      return createSchemaEvent.data.schemaId;
+    } else {
+      assert.fail("failed to create a schema")
+    }
+  }
+}
+
+export async function getOrCreateParquetBroadcastSchema(): Promise<u16> {
+  if (process.env.CHAIN_ENVIRONMENT === CHAIN_ENVIRONMENT.ROCOCO_TESTNET) {
+    const ROCOCO_PARQUET_BROADCAST_SCHEMA_ID: u16 = new u16(ExtrinsicHelper.api.registry, 51);
+    return ROCOCO_PARQUET_BROADCAST_SCHEMA_ID;
+  } else {
+    const createSchema = ExtrinsicHelper.createSchema(devAccounts[0].keys, PARQUET_BROADCAST, "Parquet", "IPFS");
+    let [event] = await createSchema.fundAndSend();
+    if (event && createSchema.api.events.schemas.SchemaCreated.is(event)) {
+      return event.data.schemaId;
+    } else {
+      assert.fail("failed to create a schema")
+    }
+  }
+}
+
+export async function getOrCreateDummySchema(): Promise<u16> {
+  if (process.env.CHAIN_ENVIRONMENT === CHAIN_ENVIRONMENT.ROCOCO_TESTNET) {
+    const ROCOCO_DUMMY_SCHEMA_ID: u16 = new u16(ExtrinsicHelper.api.registry, 52);
+    return ROCOCO_DUMMY_SCHEMA_ID;
+  } else {
+    const createDummySchema = ExtrinsicHelper.createSchema(
+      devAccounts[0].keys,
+      { type: "record", name: "Dummy on-chain schema", fields: [] },
+      "AvroBinary",
+      "OnChain"
+    );
+    const [dummySchemaEvent] = await createDummySchema.fundAndSend();
+    if (dummySchemaEvent && createDummySchema.api.events.schemas.SchemaCreated.is(dummySchemaEvent)) {
+      return dummySchemaEvent.data.schemaId;
+    } else {
+      assert.fail("failed to create a schema")
+    }
+  }
+}
+
+export async function getOrCreateAvroChatMessagePaginatedSchema(): Promise<u16> {
+  if (process.env.CHAIN_ENVIRONMENT === CHAIN_ENVIRONMENT.ROCOCO_TESTNET) {
+    const ROCOCO_AVRO_CHAT_MESSAGE_PAGINATED: u16 = new u16(ExtrinsicHelper.api.registry, 55);
+    return ROCOCO_AVRO_CHAT_MESSAGE_PAGINATED;
+  } else {
+    let schemaId: u16;
+    // Create a schema for Paginated PayloadLocation
+    const createSchema = ExtrinsicHelper.createSchema(devAccounts[0].keys, AVRO_CHAT_MESSAGE, "AvroBinary", "Paginated");
+    const [event] = await createSchema.fundAndSend();
+    if (event && createSchema.api.events.schemas.SchemaCreated.is(event)) {
+      return event.data.schemaId;
+    } else {
+      assert.fail("failed to create a schema")
+    }
+  }
+}
+
+export async function getOrCreateAvroChatMessageItemizedSchema(): Promise<u16> {
+  if (process.env.CHAIN_ENVIRONMENT === CHAIN_ENVIRONMENT.ROCOCO_TESTNET) {
+    const ROCOCO_AVRO_CHAT_MESSAGE_ITEMIZED: u16 = new u16(ExtrinsicHelper.api.registry, 54);
+    return ROCOCO_AVRO_CHAT_MESSAGE_ITEMIZED;
+  } else {
+    let schemaId: u16;
+    // Create a schema for Paginated PayloadLocation
+    const createSchema = ExtrinsicHelper.createSchema(devAccounts[0].keys, AVRO_CHAT_MESSAGE, "AvroBinary", "Itemized");
+    const [event] = await createSchema.fundAndSend();
+    if (event && createSchema.api.events.schemas.SchemaCreated.is(event)) {
+      return event.data.schemaId;
+    } else {
+      assert.fail("failed to create a schema")
+    }
   }
 }
 
 export const TokenPerCapacity = 50n;
+
+export function assertEvent(events: EventMap, eventName: string) {
+  assert(events.hasOwnProperty(eventName));
+}
+export async function getRemainingCapacity(providerId: u64): Promise<u128> {
+  const capacityStaked = (await firstValueFrom(ExtrinsicHelper.api.query.capacity.capacityLedger(providerId))).unwrap();
+  return capacityStaked.remainingCapacity;
+}
+
+export async function getNonce(keys: KeyringPair): Promise<number> {
+  const nonce = await firstValueFrom(ExtrinsicHelper.api.call.accountNonceApi.accountNonce(keys.address));
+  return nonce.toNumber();
+}
+
+export function assertExtrinsicSuccess(eventMap: EventMap) {
+  assert.notEqual(eventMap["system.ExtrinsicSuccess"], undefined);
+}

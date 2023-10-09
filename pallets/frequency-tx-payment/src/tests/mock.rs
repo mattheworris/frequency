@@ -96,10 +96,14 @@ impl pallet_balances::Config for Test {
 	type ExistentialDeposit = ConstU64<1>;
 	type AccountStore = System;
 	type MaxReserves = ();
+	type FreezeIdentifier = ();
+	type HoldIdentifier = ();
+	type MaxFreezes = ConstU32<0>;
+	type MaxHolds = ConstU32<0>;
 }
 
 pub type MaxSchemaGrantsPerDelegation = ConstU32<30>;
-pub type MaximumCapacityBatchLength = ConstU8<2>;
+pub type MaximumCapacityBatchLength = ConstU8<10>;
 
 pub struct TestAccountId;
 impl Convert<u64, AccountId> for TestAccountId {
@@ -226,9 +230,14 @@ pub struct TestCapacityCalls;
 impl GetStableWeight<RuntimeCall, Weight> for TestCapacityCalls {
 	fn get_stable_weight(call: &RuntimeCall) -> Option<Weight> {
 		match call {
-			RuntimeCall::Balances(BalancesCall::transfer { .. }) => Some(Weight::from_ref_time(11)),
+			RuntimeCall::Balances(BalancesCall::transfer { .. }) => Some(Weight::from_parts(11, 0)),
+			RuntimeCall::Msa(pallet_msa::Call::create { .. }) => Some(Weight::from_parts(12, 0)),
 			_ => None,
 		}
+	}
+
+	fn get_inner_calls(_call: &RuntimeCall) -> Option<Vec<&RuntimeCall>> {
+		return Some(vec![&RuntimeCall::Msa(pallet_msa::Call::create {})])
 	}
 }
 
@@ -269,7 +278,7 @@ impl Default for ExtBuilder {
 	fn default() -> Self {
 		Self {
 			balance_factor: 1,
-			base_weight: Weight::from_ref_time(0),
+			base_weight: Weight::from_parts(0, 0),
 			byte_fee: 1,
 			weight_to_fee: 1,
 		}

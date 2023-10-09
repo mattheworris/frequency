@@ -1,11 +1,11 @@
 import { ApiPromise, ApiRx } from "@polkadot/api";
 import { ApiTypes, AugmentedEvent, SubmittableExtrinsic } from "@polkadot/api/types";
 import { KeyringPair } from "@polkadot/keyring/types";
-import { Compact, u128, u16, u32, u64, Vec, Option, Bytes } from "@polkadot/types";
+import {Compact, u128, u16, u32, u64, Vec, Option, Bool} from "@polkadot/types";
 import { FrameSystemAccountInfo, SpRuntimeDispatchError } from "@polkadot/types/lookup";
 import { AnyNumber, AnyTuple, Codec, IEvent, ISubmittableResult } from "@polkadot/types/types";
 import {firstValueFrom, filter, map, pipe, tap} from "rxjs";
-import {devAccounts, getBlockNumber, log, Sr25519Signature} from "./helpers";
+import { getBlockNumber, log, getDefaultFundingSource, Sr25519Signature, hasRelayChain} from "./helpers";
 import { connect, connectPromise } from "./apiConnection";
 import { CreatedBlock, DispatchError, Event, SignedBlock } from "@polkadot/types/interfaces";
 import { IsEvent } from "@polkadot/types/metadata/decorate/types";
@@ -13,6 +13,7 @@ import { HandleResponse, ItemizedStoragePageResponse, MessageSourceId, Paginated
 import { u8aToHex } from "@polkadot/util/u8a/toHex";
 import { u8aWrapBytes } from "@polkadot/util";
 import type { Call } from '@polkadot/types/interfaces/runtime';
+import { EXISTENTIAL_DEPOSIT } from "./rootHooks";
 
 export type ReleaseSchedule = {
     start: number;
@@ -24,8 +25,11 @@ export type ReleaseSchedule = {
 export type AddKeyData = { msaId?: u64; expiration?: any; newPublicKey?: any; }
 export type AddProviderPayload = { authorizedMsaId?: u64; schemaIds?: u16[], expiration?: any; }
 export type ItemizedSignaturePayload = { msaId?: u64; schemaId?: u16, targetHash?: u32, expiration?: any; actions?: any; }
+export type ItemizedSignaturePayloadV2 = { schemaId?: u16, targetHash?: u32, expiration?: any; actions?: any; }
 export type PaginatedUpsertSignaturePayload = { msaId?: u64; schemaId?: u16, pageId?: u16, targetHash?: u32, expiration?: any; payload?: any; }
+export type PaginatedUpsertSignaturePayloadV2 = { schemaId?: u16, pageId?: u16, targetHash?: u32, expiration?: any; payload?: any; }
 export type PaginatedDeleteSignaturePayload = { msaId?: u64; schemaId?: u16, pageId?: u16, targetHash?: u32, expiration?: any; }
+export type PaginatedDeleteSignaturePayloadV2 = { schemaId?: u16, pageId?: u16, targetHash?: u32, expiration?: any; }
 
 export class EventError extends Error {
     name: string = '';
@@ -121,7 +125,7 @@ export class Extrinsic<T extends ISubmittableResult = ISubmittableResult, C exte
     }
 
     public payWithCapacity(nonce?: number): Promise<ParsedEventResult> {
-        return firstValueFrom(this.api.tx.frequencyTxPayment.payWithCapacity(this.extrinsic()).signAndSend(this.keys, {nonce: nonce}).pipe(
+        return firstValueFrom(this.api.tx.frequencyTxPayment.payWithCapacity(this.extrinsic()).signAndSend(this.keys, { nonce }).pipe(
             filter(({ status }) => status.isInBlock || status.isFinalized),
             this.parseResult(this.event),
         ))
@@ -138,14 +142,19 @@ export class Extrinsic<T extends ISubmittableResult = ISubmittableResult, C exte
         return call;
     }
 
-    public async fundOperation(source?: KeyringPair, nonce?: number): Promise<void> {
-        const amount = await this.getEstimatedTxFee();
-        await ExtrinsicHelper.transferFunds(source || devAccounts[0].keys, this.keys, amount).signAndSend(nonce);
+    async fundOperation(source?: KeyringPair) {
+        source ||= getDefaultFundingSource().keys;
+
+        const [amount, accountInfo] = await Promise.all([this.getEstimatedTxFee(), ExtrinsicHelper.getAccountInfo(this.keys.address)]);
+        const freeBalance = BigInt(accountInfo.data.free.toString()) - EXISTENTIAL_DEPOSIT;
+        if (amount > freeBalance) {
+            await ExtrinsicHelper.transferFunds(source, this.keys, amount).signAndSend();
+        }
     }
 
-    public async fundAndSend(source?: KeyringPair, nonce?: number): Promise<ParsedEventResult> {
+    public async fundAndSend(source?: KeyringPair): Promise<ParsedEventResult> {
         await this.fundOperation(source);
-        return this.signAndSend(nonce);
+        return this.signAndSend();
     }
 
     private parseResult<ApiType extends ApiTypes = "rxjs", T extends AnyTuple = AnyTuple, N = unknown>(targetEvent?: AugmentedEvent<ApiType, T, N>) {
@@ -216,9 +225,13 @@ export class ExtrinsicHelper {
         return ExtrinsicHelper.apiPromise.query.schemas.governanceSchemaModelMaxBytes();
     }
 
+    public static getCurrentMsaIdentifierMaximum() {
+        return ExtrinsicHelper.apiPromise.query.msa.currentMsaIdentifierMaximum();
+    }
+
     /** Balance Extrinsics */
     public static transferFunds(keys: KeyringPair, dest: KeyringPair, amount: Compact<u128> | AnyNumber): Extrinsic {
-        return new Extrinsic(() => ExtrinsicHelper.api.tx.balances.transfer(dest.address, amount), keys, ExtrinsicHelper.api.events.balances.Transfer);
+        return new Extrinsic(() => ExtrinsicHelper.api.tx.balances.transferAllowDeath(dest.address, amount), keys, ExtrinsicHelper.api.events.balances.Transfer);
     }
 
     /** Schema Extrinsics */
@@ -304,12 +317,24 @@ export class ExtrinsicHelper {
       return new Extrinsic(() => ExtrinsicHelper.api.tx.statefulStorage.applyItemActionsWithSignature(delegatorKeys.publicKey, signature, payload), providerKeys, ExtrinsicHelper.api.events.statefulStorage.ItemizedPageUpdated);
     }
 
-    public static removePageWithSignature(delegatorKeys: KeyringPair, providerKeys: KeyringPair, signature: Sr25519Signature, payload: PaginatedDeleteSignaturePayload): Extrinsic {
+    public static applyItemActionsWithSignatureV2(delegatorKeys: KeyringPair, providerKeys: KeyringPair, signature: Sr25519Signature, payload: ItemizedSignaturePayloadV2): Extrinsic {
+      return new Extrinsic(() => ExtrinsicHelper.api.tx.statefulStorage.applyItemActionsWithSignatureV2(delegatorKeys.publicKey, signature, payload), providerKeys, ExtrinsicHelper.api.events.statefulStorage.ItemizedPageUpdated);
+    }
+
+    public static deletePageWithSignature(delegatorKeys: KeyringPair, providerKeys: KeyringPair, signature: Sr25519Signature, payload: PaginatedDeleteSignaturePayload): Extrinsic {
       return new Extrinsic(() => ExtrinsicHelper.api.tx.statefulStorage.deletePageWithSignature(delegatorKeys.publicKey, signature, payload), providerKeys, ExtrinsicHelper.api.events.statefulStorage.PaginatedPageDeleted);
+    }
+
+    public static deletePageWithSignatureV2(delegatorKeys: KeyringPair, providerKeys: KeyringPair, signature: Sr25519Signature, payload: PaginatedDeleteSignaturePayloadV2): Extrinsic {
+      return new Extrinsic(() => ExtrinsicHelper.api.tx.statefulStorage.deletePageWithSignatureV2(delegatorKeys.publicKey, signature, payload), providerKeys, ExtrinsicHelper.api.events.statefulStorage.PaginatedPageDeleted);
     }
 
     public static upsertPageWithSignature(delegatorKeys: KeyringPair, providerKeys: KeyringPair, signature: Sr25519Signature, payload: PaginatedUpsertSignaturePayload): Extrinsic {
       return new Extrinsic(() => ExtrinsicHelper.api.tx.statefulStorage.upsertPageWithSignature(delegatorKeys.publicKey, signature, payload), providerKeys, ExtrinsicHelper.api.events.statefulStorage.PaginatedPageUpdated);
+    }
+
+    public static upsertPageWithSignatureV2(delegatorKeys: KeyringPair, providerKeys: KeyringPair, signature: Sr25519Signature, payload: PaginatedUpsertSignaturePayloadV2): Extrinsic {
+      return new Extrinsic(() => ExtrinsicHelper.api.tx.statefulStorage.upsertPageWithSignatureV2(delegatorKeys.publicKey, signature, payload), providerKeys, ExtrinsicHelper.api.events.statefulStorage.PaginatedPageUpdated);
     }
 
     public static getItemizedStorage(msa_id: MessageSourceId, schemaId: any): Promise<ItemizedStoragePageResponse> {
@@ -348,6 +373,11 @@ export class ExtrinsicHelper {
         return firstValueFrom(suffixes);
     }
 
+    public static validateHandle(base_handle: string): Promise<Bool> {
+      let validationResult = ExtrinsicHelper.api.rpc.handles.validateHandle(base_handle);
+      return firstValueFrom(validationResult);
+    }
+
     public static addOnChainMessage(keys: KeyringPair, schemaId: any, payload: string): Extrinsic {
         return new Extrinsic(() => ExtrinsicHelper.api.tx.messages.addOnchainMessage(null, schemaId, payload), keys, ExtrinsicHelper.api.events.messages.MessagesStored);
     }
@@ -384,15 +414,15 @@ export class ExtrinsicHelper {
         return new Extrinsic(() => ExtrinsicHelper.api.tx.utility.forceBatch(calls), keys, ExtrinsicHelper.api.events.utility.BatchCompleted);
     }
 
-    public static async mine() {
-      let res: CreatedBlock = await firstValueFrom(ExtrinsicHelper.api.rpc.engine.createBlock(true, true));
-      ExtrinsicHelper.api.rpc.engine.finalizeBlock(res.blockHash);
-    }
-
-    public static async run_to_block(blockNumber: number) {
+    public static async runToBlock(blockNumber: number) {
       let currentBlock = await getBlockNumber();
       while (currentBlock < blockNumber) {
-        await ExtrinsicHelper.mine();
+        // In Rococo, just wait
+        if (hasRelayChain()) {
+            await new Promise((r) => setTimeout(r, 4_000));
+        } else {
+            await ExtrinsicHelper.createBlock();
+        }
         currentBlock = await getBlockNumber();
       }
     }

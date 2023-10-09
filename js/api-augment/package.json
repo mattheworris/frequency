@@ -22,7 +22,7 @@
     "prebuild": "npm run generate",
     "build": "tsc -p ./tsconfig.types.json && tsc -p ./tsconfig.cjs.json && tsc -p ./tsconfig.esm.json",
     "postbuild": "npm run package",
-    "fetch:local": "curl -H \"Content-Type: application/json\" -d '{\"id\":\"1\", \"jsonrpc\":\"2.0\", \"method\": \"state_getMetadata\", \"params\":[]}' http://localhost:9933 -o ./metadata.json",
+    "fetch:local": "curl -H \"Content-Type: application/json\" -d '{\"id\":\"1\", \"jsonrpc\":\"2.0\", \"method\": \"state_getMetadata\", \"params\":[]}' http://localhost:9944 -o ./metadata.json",
     "generate:defs": "node --loader ts-node/esm node_modules/.bin/polkadot-types-from-defs --package @frequency-chain/api-augment --input ./interfaces --endpoint ./metadata.json",
     "generate:meta": "node --loader ts-node/esm node_modules/.bin/polkadot-types-from-chain --package @frequency-chain/api-augment --endpoint ./metadata.json --output ./interfaces",
     "test": "mocha --require ts-node/register  ./test/**/*.test.ts",
@@ -33,23 +33,23 @@
   "author": "LibertyDSNP",
   "license": "Apache-2.0",
   "dependencies": {
-    "@polkadot/api": "10.4.1",
-    "@polkadot/rpc-provider": "10.4.1",
-    "@polkadot/types": "10.4.1"
+    "@polkadot/api": "^10.9.1",
+    "@polkadot/rpc-provider": "^10.9.1",
+    "@polkadot/types": "^10.9.1"
   },
   "devDependencies": {
-    "@polkadot/typegen": "10.4.1",
+    "@polkadot/typegen": "^10.9.1",
     "@types/mocha": "^10.0.1",
-    "@typescript-eslint/eslint-plugin": "^5.59.1",
-    "@typescript-eslint/parser": "^5.59.1",
-    "eslint": "^8.39.0",
-    "eslint-config-prettier": "^8.8.0",
-    "eslint-plugin-import": "^2.27.5",
-    "eslint-plugin-mocha": "^10.1.0",
-    "eslint-plugin-prettier": "^4.2.1",
+    "@typescript-eslint/eslint-plugin": "^6.7.3",
+    "@typescript-eslint/parser": "^6.7.3",
+    "eslint": "^8.50.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-import": "^2.28.1",
+    "eslint-plugin-mocha": "^10.2.0",
+    "eslint-plugin-prettier": "^5.0.0",
     "mocha": "10.2.0",
-    "prettier": "2.8.8",
+    "prettier": "3.0.3",
     "ts-node": "^10.9.1",
-    "typescript": "^5.0.4"
+    "typescript": "^5.2.2"
   }
 }

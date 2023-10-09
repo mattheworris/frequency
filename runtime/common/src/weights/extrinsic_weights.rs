@@ -1,14 +1,31 @@
+// This file is part of Substrate.
+
+// Copyright (C) Parity Technologies (UK) Ltd.
+// SPDX-License-Identifier: Apache-2.0
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! THIS FILE WAS AUTO-GENERATED USING THE SUBSTRATE BENCHMARK CLI VERSION 4.0.0-dev
-//! DATE: 2023-04-05 (Y/M/D)
-//! HOSTNAME: `benchmark-runner-p5rt6-vk9q8`, CPU: `Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz`
+//! DATE: 2023-07-07 (Y/M/D)
+//! HOSTNAME: `benchmark-runner-qpqf8-fp5d5`, CPU: `Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz`
 //!
-//! SHORT-NAME: `extrinsic`, LONG-NAME: `ExtrinsicBase`, RUNTIME: `Frequency Local Testnet`
+//! SHORT-NAME: `extrinsic`, LONG-NAME: `ExtrinsicBase`, RUNTIME: `Frequency Development (No Relay)`
 //! WARMUPS: `10`, REPEAT: `100`
 //! WEIGHT-PATH: `runtime/common/src/weights`
 //! WEIGHT-METRIC: `Average`, WEIGHT-MUL: `1.0`, WEIGHT-ADD: `0`
 
 // Executed Command:
-//   ./scripts/../target/production/frequency
+//   ./scripts/../target/release/frequency
 //   benchmark
 //   overhead
 //   --execution=wasm
@@ -17,6 +34,7 @@
 //   --chain=dev
 //   --warmup=10
 //   --repeat=100
+//   --header=./HEADER-APACHE2
 
 use sp_core::parameter_types;
 use sp_weights::{constants::WEIGHT_REF_TIME_PER_NANOS, Weight};
@@ -26,17 +44,17 @@ parameter_types! {
 	/// Calculated by multiplying the *Average* with `1.0` and adding `0`.
 	///
 	/// Stats nanoseconds:
-	///   Min, Max: 90_148, 102_526
-	///   Average:  90_764
-	///   Median:   90_507
-	///   Std-Dev:  1449.85
+	///   Min, Max: 103_923, 114_193
+	///   Average:  104_846
+	///   Median:   104_558
+	///   Std-Dev:  1405.78
 	///
 	/// Percentiles nanoseconds:
-	///   99th: 96_896
-	///   95th: 91_299
-	///   75th: 90_626
+	///   99th: 111_990
+	///   95th: 105_434
+	///   75th: 104_916
 	pub const ExtrinsicBaseWeight: Weight =
-		Weight::from_ref_time(WEIGHT_REF_TIME_PER_NANOS.saturating_mul(90_764));
+		Weight::from_parts(WEIGHT_REF_TIME_PER_NANOS.saturating_mul(104_846), 0);
 }
 
 #[cfg(test)]

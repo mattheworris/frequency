@@ -14,7 +14,7 @@ name = "frequency"
 path = "src/main.rs"
 
 [build-dependencies]
-substrate-build-script-utils = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.36" }
+substrate-build-script-utils = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.43" }
 
 [dependencies]
 # Frequency Runtime
@@ -38,7 +38,7 @@ frequency-rococo-testnet = [
   "frequency-service/frequency-rococo-testnet",
   "frequency-cli/frequency-rococo-testnet"
 ]
-all-frequency-features = [
-  "frequency-service/all-frequency-features",
-  "frequency-cli/all-frequency-features"
+frequency-lint-check = [
+  "frequency-service/frequency-lint-check",
+  "frequency-cli/frequency-lint-check"
 ]

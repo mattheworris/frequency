@@ -31,15 +31,16 @@
 //! - staking and, updating,
 //!
 //! ## Terminology
-//! * **Staker:** [insert description].
-//! * **Target** [insert description].
-//! * **Epoch Period:** [insert description here].
-//! * **Capacity:** [insert description here].
-//! * **Replenishable:** [insert description here].
+//! * **Capacity:** A refillable and non-transferable resource that can be used to pay for transactions on the network.
+//! * **Staker:** An account that stakes tokens to the Frequency network in exchange for Capacity.
+//! * **Target** A provider MSA account that receives Capacity.
+//! * **Epoch Period:** The length of an epoch in blocks, used for replenishment and thawing.
+//! * **Replenishable:**  The ability of a provider MSA account to be refilled with Capacity after an epoch period.
 //!
 // Substrate macros are tripping the clippy::expect_used lint.
 #![allow(clippy::expect_used)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![feature(rustdoc_missing_doc_code_examples)]
 // Strong Documentation Lints
 #![deny(
 	rustdoc::broken_intra_doc_links,
@@ -208,7 +209,6 @@ pub mod pallet {
 	// Simple declaration of the `Pallet` type. It is placeholder we use to implement traits and
 	// method.
 	#[pallet::pallet]
-	#[pallet::generate_store(pub (super) trait Store)]
 	pub struct Pallet<T>(_);
 
 	#[pallet::event]
@@ -234,11 +234,11 @@ pub mod pallet {
 		},
 		/// A token account has unstaked the Frequency network.
 		UnStaked {
-			/// The token account that staked tokens to the network.
+			/// The token account that unstaked tokens from the network.
 			account: T::AccountId,
-			/// The MSA that a token account targeted to receive Capacity to unstake from.
+			/// The MSA target that will now have Capacity reduced as a result of unstaking.
 			target: MessageSourceId,
-			/// An amount that was unstaked.
+			/// The amount that was unstaked.
 			amount: BalanceOf<T>,
 			/// The Capacity amount that was reduced from a target.
 			capacity: BalanceOf<T>,
@@ -267,7 +267,7 @@ pub mod pallet {
 		InsufficientStakingAmount,
 		/// Staker is attempting to stake a zero amount.
 		ZeroAmountNotAllowed,
-		/// Origin has no Staking Account
+		/// This AccountId does not have a staking account.
 		NotAStakingAccount,
 		/// No staked value is available for withdrawal; either nothing is being unstaked,
 		/// or nothing has passed the thaw period.
@@ -276,8 +276,6 @@ pub mod pallet {
 		UnstakedAmountIsZero,
 		/// Amount to unstake is greater than the amount staked.
 		AmountToUnstakeExceedsAmountStaked,
-		/// Attempting to unstake from a target that has not been staked to.
-		StakingAccountNotFound,
 		/// Attempting to get a staker / target relationship that does not exist.
 		StakerTargetRelationshipNotFound,
 		/// Attempting to get the target's capacity that does not exist.
@@ -402,7 +400,7 @@ pub mod pallet {
 		/// ### Errors
 		/// - Returns `Error::MaxEpochLengthExceeded` if `length` is greater than T::MaxEpochLength.
 		#[pallet::call_index(3)]
-		#[pallet::weight(T::WeightInfo::unstake())]
+		#[pallet::weight(T::WeightInfo::set_epoch_length())]
 		pub fn set_epoch_length(origin: OriginFor<T>, length: T::BlockNumber) -> DispatchResult {
 			ensure_root(origin)?;
 			ensure!(length <= T::MaxEpochLength::get(), Error::<T>::MaxEpochLengthExceeded);
@@ -488,7 +486,7 @@ impl<T: Config> Pallet<T> {
 
 	/// If the staking account total is zero we reap storage, otherwise set the acount to the new details.
 	fn update_or_delete_staking_account(
-		staker: &<T>::AccountId,
+		staker: &T::AccountId,
 		staking_account: &StakingAccountDetails<T>,
 	) {
 		if staking_account.total.is_zero() {
@@ -521,7 +519,7 @@ impl<T: Config> Pallet<T> {
 		amount: BalanceOf<T>,
 	) -> Result<BalanceOf<T>, DispatchError> {
 		let mut staking_account =
-			Self::get_staking_account_for(unstaker).ok_or(Error::<T>::StakingAccountNotFound)?;
+			Self::get_staking_account_for(unstaker).ok_or(Error::<T>::NotAStakingAccount)?;
 		ensure!(amount <= staking_account.active, Error::<T>::AmountToUnstakeExceedsAmountStaked);
 
 		let current_epoch: T::EpochNumber = Self::get_current_epoch();
@@ -584,11 +582,11 @@ impl<T: Config> Pallet<T> {
 			CurrentEpoch::<T>::set(current_epoch.saturating_add(1u32.into()));
 			CurrentEpochInfo::<T>::set(EpochInfo { epoch_start: current_block });
 			T::WeightInfo::on_initialize()
-				.saturating_add(RocksDbWeight::get().reads(1))
-				.saturating_add(RocksDbWeight::get().writes(1))
+				.saturating_add(T::DbWeight::get().reads(1))
+				.saturating_add(T::DbWeight::get().writes(2))
 		} else {
 			// 1 for get_current_epoch_info, 1 for get_epoch_length
-			RocksDbWeight::get().reads(2u64).saturating_add(RocksDbWeight::get().writes(1))
+			T::DbWeight::get().reads(2u64).saturating_add(RocksDbWeight::get().writes(1))
 		}
 	}
 }

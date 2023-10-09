@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 function get_frequency_pid () {
-    lsof -i tcp:9933 | grep frequency | xargs | awk '{print $2}'
+    lsof -i tcp:9944 | grep frequency | xargs | awk '{print $2}'
 }
 
 function cleanup () {
@@ -30,29 +30,59 @@ function cleanup () {
 
 RUNDIR=$(dirname ${0})
 SKIP_JS_BUILD=
+CHAIN="development"
+
+# A distinction is made between the local node and the the test chain
+# because the local node will be built and generate the js api augment
+# for the polkadot.js api even when testing against a live chain.
+LOCAL_NODE_BLOCK_SEALING="instant"
+
 trap 'cleanup EXIT' EXIT
 trap 'cleanup TERM' TERM
 trap 'cleanup INT' INT
 
-while getopts "s" OPTNAME
+while getopts "sc:" OPTNAME
 do
     case "${OPTNAME}" in
-        "s") SKIP_JS_BUILD=1
+        "s")
+            SKIP_JS_BUILD=1
+        ;;
+        "c")
+            CHAIN=$OPTARG
         ;;
     esac
 done
 shift $((OPTIND-1))
 
-TEST="test"
-START="start"
+case "${CHAIN}" in
+    "development")
+        PROVIDER_URL="ws://127.0.0.1:9944"
+        NPM_RUN_COMMAND="test"
+        CHAIN_ENVIRONMENT="dev"
 
-if [[ "$1" == "load" ]]; then
-    TEST="test:load"
-    START="start-manual"
-fi
+        if [[ "$1" == "load" ]]; then
+            NPM_RUN_COMMAND="test:load"
+            LOCAL_NODE_BLOCK_SEALING="manual"
+        fi
+    ;;
+    "rococo_local")
+        PROVIDER_URL="ws://127.0.0.1:9944"
+        NPM_RUN_COMMAND="test:relay"
+        CHAIN_ENVIRONMENT="rococo-local"
+    ;;
+    "rococo_testnet")
+        PROVIDER_URL="wss://rpc.rococo.frequency.xyz"
+        NPM_RUN_COMMAND="test:relay"
+        CHAIN_ENVIRONMENT="rococo-testnet"
+
+        read -p "Enter the seed phrase for the Frequency Rococo account funding source: " FUNDING_ACCOUNT_SEED_PHRASE
+
+    ;;
+esac
 
 echo "The integration test output will be logged on this console"
-echo "and the Frequency node output will be logged to the file frequency.log."
+
+echo "The Frequency node output will be logged to the file frequency.log."
 echo "You can 'tail -f frequency.log' in another terminal to see both side-by-side."
 echo ""
 echo -e "Checking to see if Frequency is running..."
@@ -61,22 +91,31 @@ if [ -n "$( get_frequency_pid )" ]
 then
     echo "Frequency is already running."
 else
-    echo "Building local Frequency executable..."
-    if ! make build-local
+    if [ "${CHAIN_ENVIRONMENT}" = "rococo-local" ]
+    then
+        echo "Frequency is not running."
+        echo "The intended use case of running integration tests with a chain environment"
+        echo "of \"rococo-local\" is to run the tests against a locally running Frequency"
+        echo "chain with locally running Polkadot relay nodes."
+        exit 1
+    fi
+
+    echo "Building a no-relay Frequency executable..."
+    if ! make build-no-relay
     then
         echo "Error building Frequency executable; aborting."
         exit 1
     fi
 
-    echo "Starting a Frequency Node with ${START}..."
-    case ${START} in
-        "start") ${RUNDIR}/init.sh start-frequency-instant >& frequency.log &
+    echo "Starting a Frequency Node with block sealing ${LOCAL_NODE_BLOCK_SEALING}..."
+    case ${LOCAL_NODE_BLOCK_SEALING} in
+        "instant") ${RUNDIR}/init.sh start-frequency-instant >& frequency.log &
         ;;
-        "start-manual") ${RUNDIR}/init.sh start-frequency-manual >& frequency.log &
+        "manual") ${RUNDIR}/init.sh start-frequency-manual >& frequency.log &
         ;;
     esac
 
-    declare -i timeout_secs=30
+    declare -i timeout_secs=60
     declare -i i=0
     while (( !PID && i < timeout_secs ))
     do
@@ -119,4 +158,5 @@ npm install
 echo "---------------------------------------------"
 echo "Starting Tests..."
 echo "---------------------------------------------"
-WS_PROVIDER_URL="ws://127.0.0.1:9944" npm run $TEST
+
+CHAIN_ENVIRONMENT=$CHAIN_ENVIRONMENT FUNDING_ACCOUNT_SEED_PHRASE=$FUNDING_ACCOUNT_SEED_PHRASE WS_PROVIDER_URL="$PROVIDER_URL" npm run $NPM_RUN_COMMAND

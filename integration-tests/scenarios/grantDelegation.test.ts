@@ -4,6 +4,9 @@ import { u16, u64 } from "@polkadot/types";
 import assert from "assert";
 import { AddProviderPayload, Extrinsic, ExtrinsicHelper } from "../scaffolding/extrinsicHelpers";
 import { createAndFundKeypair, createKeys, generateDelegationPayload, signPayloadSr25519 } from "../scaffolding/helpers";
+import { SchemaGrantResponse, SchemaId } from "@frequency-chain/api-augment/interfaces";
+import { firstValueFrom } from "rxjs";
+import { BlockNumber } from "@polkadot/types/interfaces";
 
 describe("Delegation Scenario Tests", function () {
     let keys: KeyringPair;
@@ -12,6 +15,7 @@ describe("Delegation Scenario Tests", function () {
     let providerKeys: KeyringPair;
     let otherProviderKeys: KeyringPair;
     let schemaId: u16;
+    let schemaId2: SchemaId;
     let providerId: u64;
     let otherProviderId: u64;
     let msaId: u64;
@@ -89,12 +93,19 @@ describe("Delegation Scenario Tests", function () {
                 },
             ]
         }, "AvroBinary", "OnChain");
-        const [createSchemaEvent] = await createSchemaOp.fundAndSend();
+        let [createSchemaEvent] = await createSchemaOp.fundAndSend();
         assert.notEqual(createSchemaEvent, undefined, "setup should return SchemaCreated event");
         if (createSchemaEvent && ExtrinsicHelper.api.events.schemas.SchemaCreated.is(createSchemaEvent)) {
-            schemaId = createSchemaEvent.data[1];
+            schemaId = createSchemaEvent.data.schemaId;
         }
         assert.notEqual(schemaId, undefined, "setup should populate schemaId");
+
+        // Create a second schema
+        [createSchemaEvent] = await createSchemaOp.fundAndSend();
+        assert.notEqual(createSchemaEvent, undefined, "setup should return SchemaCreated event");
+        if (createSchemaEvent && ExtrinsicHelper.api.events.schemas.SchemaCreated.is(createSchemaEvent)) {
+            schemaId2 = createSchemaEvent.data.schemaId;
+        }
     });
 
     describe("delegation grants", function () {
@@ -159,6 +170,34 @@ describe("Delegation Scenario Tests", function () {
             }
         });
 
+        it('initial granted schemas should be correct', async function () {
+            let schemaGrants = await firstValueFrom(ExtrinsicHelper.api.rpc.msa.grantedSchemaIdsByMsaId(msaId, providerId));
+            assert.equal(schemaGrants.isSome, true);
+            const schemaIds = schemaGrants.unwrap().filter((grant) => grant.revoked_at.toBigInt() === 0n).map((grant) => grant.schema_id.toNumber());
+            const expectedSchemaIds = [schemaId.toNumber()];
+            assert.deepStrictEqual(schemaIds, expectedSchemaIds, "granted schemas should equal initial set");
+        });
+
+        it('should grant additional schema permissions', async function() {
+            const payload = await generateDelegationPayload({
+                authorizedMsaId: providerId,
+                schemaIds: [schemaId, schemaId2],
+            });
+            const addProviderData = ExtrinsicHelper.api.registry.createType("PalletMsaAddProvider", payload);
+
+            const grantDelegationOp = ExtrinsicHelper.grantDelegation(keys, providerKeys, signPayloadSr25519(keys, addProviderData), payload);
+            const [grantDelegationEvent] = await grantDelegationOp.fundAndSend();
+            assert.notEqual(grantDelegationEvent, undefined, "should have returned DelegationGranted event");
+            if (grantDelegationEvent && grantDelegationOp.api.events.msa.DelegationGranted.is(grantDelegationEvent)) {
+                assert.deepEqual(grantDelegationEvent.data.providerId, providerId, 'provider IDs should match');
+                assert.deepEqual(grantDelegationEvent.data.delegatorId, msaId, 'delegator IDs should match');
+            }
+            let grants = await firstValueFrom(ExtrinsicHelper.api.rpc.msa.grantedSchemaIdsByMsaId(msaId, providerId));
+            const grantedSchemaIds = grants.unwrap().filter((grant) => grant.revoked_at.toBigInt() === 0n).map((grant) => grant.schema_id.toNumber());
+            const expectedSchemaIds = [schemaId.toNumber(), schemaId2.toNumber()];
+            assert.deepStrictEqual(grantedSchemaIds, expectedSchemaIds);
+        })
+
     });
 
     describe("revoke schema permissions", function () {
@@ -191,6 +230,14 @@ describe("Delegation Scenario Tests", function () {
             const op = ExtrinsicHelper.revokeSchemaPermissions(keys, providerId, [sid]);
             await assert.rejects(op.fundAndSend(), { name: 'SchemaNotGranted' });
         });
+
+        it("should successfully revoke granted schema", async function () {
+            const op = ExtrinsicHelper.revokeSchemaPermissions(keys, providerId, [schemaId2]);
+            await assert.doesNotReject(op.fundAndSend());
+            let grants = await firstValueFrom(ExtrinsicHelper.api.rpc.msa.grantedSchemaIdsByMsaId(msaId, providerId));
+            const grantedSchemaIds = grants.unwrap().filter((grant) => grant.revoked_at.toBigInt() === 0n).map((grant) => grant.schema_id.toNumber());
+            assert.deepEqual(grantedSchemaIds, [schemaId.toNumber()], "granted schema permissions should include only non-revoked schema permission");
+        });
     });
 
     describe("revoke delegations", function () {
@@ -220,21 +267,49 @@ describe("Delegation Scenario Tests", function () {
             await assert.rejects(op.fundAndSend(), { name: 'RpcError', message: /Custom error: 0$/ });
         });
 
-        it("should revoke a delegation by provider", async function () {
-            const newKeys = createKeys();
-            const payload = await generateDelegationPayload({ authorizedMsaId: providerId, schemaIds: [schemaId] });
-            const addProviderData = ExtrinsicHelper.api.registry.createType("PalletMsaAddProvider", payload);
-            let op = ExtrinsicHelper.createSponsoredAccountWithDelegation(newKeys, providerKeys, signPayloadSr25519(newKeys, addProviderData), payload);
-            const [msaEvent] = await op.fundAndSend();
-            const msaId = (msaEvent && op.api.events.msa.MsaCreated.is(msaEvent) ? msaEvent.data.msaId : undefined);
-            assert.notEqual(msaId, undefined, 'should have returned an MSA');
-            op = ExtrinsicHelper.revokeDelegationByProvider(msaId as u64, providerKeys);
-            const [revokeEvent] = await op.fundAndSend();
-            assert.notEqual(revokeEvent, undefined, "should have returned a DelegationRevoked event");
-            if (revokeEvent && op.api.events.msa.DelegationRevoked.is(revokeEvent)) {
-                assert.deepEqual(revokeEvent.data.delegatorId, msaId, 'delegator ids should match');
-                assert.deepEqual(revokeEvent.data.providerId, providerId, 'provider ids should match');
-            }
+        describe('Successful revocation', () => {
+            let newKeys: KeyringPair;
+            let msaId: u64 | undefined;
+            let revokedAtBlock: bigint;
+
+            before(async () => {
+                newKeys = createKeys();
+                const payload = await generateDelegationPayload({ authorizedMsaId: providerId, schemaIds: [schemaId] });
+                const addProviderData = ExtrinsicHelper.api.registry.createType("PalletMsaAddProvider", payload);
+                const op = ExtrinsicHelper.createSponsoredAccountWithDelegation(newKeys, providerKeys, signPayloadSr25519(newKeys, addProviderData), payload);
+                const [msaEvent] = await op.fundAndSend();
+                msaId = (msaEvent && op.api.events.msa.MsaCreated.is(msaEvent) ? msaEvent.data.msaId : undefined);
+                assert.notEqual(msaId, undefined, 'should have returned an MSA');
+            });
+
+            it("schema permissions revoked block of delegation should be zero", async () => {
+                const delegationsResponse = await ExtrinsicHelper.apiPromise.rpc.msa.grantedSchemaIdsByMsaId(msaId, providerId);
+                assert(delegationsResponse.isSome);
+                const delegations: SchemaGrantResponse[] = delegationsResponse.unwrap().toArray();
+                delegations.forEach((delegation) => {
+                    assert(delegation.revoked_at.toBigInt() == 0n);
+                })
+            })
+
+            it("should revoke a delegation by provider", async function () {
+                const op = ExtrinsicHelper.revokeDelegationByProvider(msaId as u64, providerKeys);
+                const [revokeEvent] = await op.fundAndSend();
+                assert.notEqual(revokeEvent, undefined, "should have returned a DelegationRevoked event");
+                if (revokeEvent && op.api.events.msa.DelegationRevoked.is(revokeEvent)) {
+                    assert.deepEqual(revokeEvent.data.delegatorId, msaId, 'delegator ids should match');
+                    assert.deepEqual(revokeEvent.data.providerId, providerId, 'provider ids should match');
+                }
+                revokedAtBlock = (await ExtrinsicHelper.apiPromise.rpc.chain.getBlock()).block.header.number.toBigInt()
+            });
+
+            it("revoked delegation should be reflected in all previously-granted schema permissions", async () => {
+                const delegationsResponse = await ExtrinsicHelper.apiPromise.rpc.msa.grantedSchemaIdsByMsaId(msaId, providerId);
+                assert(delegationsResponse.isSome);
+                const delegations: SchemaGrantResponse[] = delegationsResponse.unwrap().toArray();
+                delegations.forEach((delegation) => {
+                    assert(delegation.revoked_at.toBigInt() == revokedAtBlock);
+                })
+            })
         });
     });
 

@@ -47,6 +47,7 @@
 // Substrate macros are tripping the clippy::expect_used lint.
 #![allow(clippy::expect_used)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![feature(rustdoc_missing_doc_code_examples)]
 // Strong Documentation Lints
 #![deny(
 	rustdoc::broken_intra_doc_links,
@@ -79,7 +80,8 @@ use common_primitives::{
 	capacity::TargetValidator,
 	msa::{
 		Delegation, DelegationValidator, DelegatorId, MsaLookup, MsaValidator, ProviderId,
-		ProviderLookup, ProviderRegistryEntry, SchemaGrantValidator, SignatureRegistryPointer,
+		ProviderLookup, ProviderRegistryEntry, SchemaGrant, SchemaGrantValidator,
+		SignatureRegistryPointer,
 	},
 	node::ProposalProvider,
 	schema::{SchemaId, SchemaValidator},
@@ -97,8 +99,6 @@ mod benchmarking;
 
 #[cfg(test)]
 mod tests;
-
-pub mod migration;
 
 pub mod types;
 
@@ -160,7 +160,6 @@ pub mod pallet {
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
 	#[pallet::pallet]
-	#[pallet::generate_store(pub (super) trait Store)]
 	#[pallet::storage_version(STORAGE_VERSION)]
 	pub struct Pallet<T>(_);
 
@@ -611,12 +610,17 @@ pub mod pallet {
 			Ok(())
 		}
 
-		/// Adds a given `new_key` to `msa_id` of the account signing `msa_owner_proof`, which must match the MSA in `add_key_payload`.
-		/// The `new_key` must sign the `add_key_payload` to authorize the addition.
+		/// Adds a new public key to an existing Message Source Account (MSA). This functionality enables the MSA owner to manage multiple keys
+		/// for their account or rotate keys for enhanced security.
 		///
-		/// # Remarks
-		/// * Origin can be same as msa owner.
-		/// * Signatures should be over the [`AddKeyData`] struct
+		/// The `origin` parameter represents the account from which the function is called and can be either the MSA owner's account or a delegated provider's account,
+		/// depending on the intended use.
+		///
+		/// The function requires two signatures: `msa_owner_proof` and `new_key_owner_proof`, which serve as proofs of ownership for the existing MSA
+		/// and the new public key account, respectively.  This ensures that a new key cannot be added without permission of both the MSA owner and the owner of the new key.
+		///
+		/// The necessary information for the key addition, the new public key and the MSA ID, is contained in the `add_key_payload` parameter of type [AddKeyData].
+		/// It also contains an expiration block number for both proofs, ensuring they are valid and must be greater than the current block.
 		///
 		/// # Events
 		/// * [`Event::PublicKeyAdded`]
@@ -1314,7 +1318,7 @@ impl<T: Config> Pallet<T> {
 	pub fn get_granted_schemas_by_msa_id(
 		delegator: DelegatorId,
 		provider: ProviderId,
-	) -> Result<Option<Vec<SchemaId>>, DispatchError> {
+	) -> Result<Option<Vec<SchemaGrant<SchemaId, T::BlockNumber>>>, DispatchError> {
 		let provider_info =
 			Self::get_delegation_of(delegator, provider).ok_or(Error::<T>::DelegationNotFound)?;
 
@@ -1324,8 +1328,14 @@ impl<T: Config> Pallet<T> {
 		}
 
 		let mut schema_list = Vec::new();
-		for (key, _) in schema_permissions {
-			schema_list.push(key);
+		for (schema_id, revoked_at) in schema_permissions {
+			if provider_info.revoked_at > T::BlockNumber::zero() &&
+				(revoked_at > provider_info.revoked_at || revoked_at == T::BlockNumber::zero())
+			{
+				schema_list.push(SchemaGrant { schema_id, revoked_at: provider_info.revoked_at });
+			} else {
+				schema_list.push(SchemaGrant { schema_id, revoked_at });
+			}
 		}
 		Ok(Some(schema_list))
 	}

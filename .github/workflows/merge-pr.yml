@@ -16,7 +16,7 @@ jobs:
       ci-base-image: ${{steps.filter.outputs.ci-base-image}}
     steps:
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Check for Changed Files
         uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50
         id: filter
@@ -27,21 +27,14 @@ jobs:
 
   publish-js-api-augment-rc:
     name: Merge - Publish JS API Augment Release Candidate
-    env:
-      HOME: /root
-    runs-on: [self-hosted, Linux, X64, testing, v2]
+    runs-on: [self-hosted, Linux, X64, build, v2]
     container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          targets: wasm32-unknown-unknown
-          toolchain: stable
+        uses: actions/checkout@v4
       - name: Output Metadata
         # Run the cargo command and ignore any extra lines outside of the json result
-        run: CARGO_INCREMENTAL=0 RUSTFLAGS="-D warnings" cargo run --features frequency-rococo-local -- export-metadata  --chain=frequency-local --tmp ./js/api-augment/metadata.json
+        run: CARGO_INCREMENTAL=0 RUSTFLAGS="-D warnings" cargo run --features frequency-rococo-local -- export-metadata  --chain=frequency-rococo-local --tmp ./js/api-augment/metadata.json
       - name: Set up NodeJs
         uses: actions/setup-node@v3
         with:
@@ -73,16 +66,11 @@ jobs:
     name: Merge - Calculate Code Coverage
     # This job currently fails on EKS runners and must be run on standalone until
     # https://www.pivotaltracker.com/story/show/185045668 is resolved.
-    runs-on: [self-hosted, Linux, X64, build]
+    runs-on: [self-hosted, Linux, X64, build, v1]
     container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          targets: wasm32-unknown-unknown
-          toolchain: stable
+        uses: actions/checkout@v4
       - name: Generate and Upload Code Coverage
         id: codecov
         uses: ./.github/workflows/common/codecov
@@ -96,23 +84,16 @@ jobs:
       BRANCH_NAME: main
     runs-on: ubuntu-20.04
     steps:
-      - name: Set Env Vars
-        run: |
-          echo "BIN_DIR=target/${{matrix.build-profile}}" >> $GITHUB_ENV
-          echo "BUILT_BIN_FILENAME=frequency" >> $GITHUB_ENV
-          echo "RELEASE_BIN_FILENAME=frequency-${{matrix.network}}.${{matrix.arch}}" >> $GITHUB_ENV
       - name: Check Out Repo
-        uses: actions/checkout@v3
-        with:
-          ref: ${{env.RELEASE_BRANCH_NAME}}
+        uses: actions/checkout@v4
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
-          platforms: ${{matrix.arch}}
+          platforms: "amd64"
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{github.actor}}
@@ -123,9 +104,8 @@ jobs:
         with:
           result-encoding: string
           script: return `ghcr.io/${context.repo.owner.toLowerCase()}/${context.repo.repo.toLowerCase()}`
-      - name: Build and push prod docker image
-        id: docker_build
-        uses: docker/build-push-action@v4
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
         with:
           context: tools/ci/docker
           push: true

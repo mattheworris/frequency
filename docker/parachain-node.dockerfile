@@ -20,14 +20,13 @@ USER frequency
 
 COPY --from=base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 # For local testing only
-# COPY --chown=frequency target/production/frequency.amd64 ./frequency/frequency
-COPY --chown=frequency target/production/frequency ./frequency/
+# COPY --chown=frequency target/release/frequency.amd64 ./frequency/frequency
+COPY --chown=frequency target/release/frequency ./frequency/
 
-# 9933 for RPC call
-# 9944 for Websocket
+# 9944 for Websocket and Rpc
 # 30333 for P2P
 # 9615 for Telemetry (prometheus)
-EXPOSE 9933 9944 30333 9615
+EXPOSE 9944 30333 9615
 
 VOLUME ["/chain-data"]
 

@@ -33,8 +33,7 @@ pub use runtime_version_cmd::*;
 
 #[cfg(feature = "cli")]
 pub use sc_cli::{Error, Result};
-
 #[cfg(feature = "frequency-no-relay")]
 pub mod run_as_localchain;
-#[cfg(any(not(feature = "frequency-no-relay"), feature = "all-frequency-features"))]
+#[cfg(any(not(feature = "frequency-no-relay"), feature = "frequency-lint-check"))]
 pub mod run_as_parachain;

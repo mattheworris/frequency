@@ -115,7 +115,7 @@ pub fn local_testnet_config() -> ChainSpec {
 		// Name
 		"Frequency Local Testnet",
 		// ID
-		"frequency-local",
+		"frequency-rococo-local",
 		ChainType::Local,
 		move || {
 			testnet_genesis(
@@ -168,7 +168,7 @@ pub fn local_testnet_config() -> ChainSpec {
 		// Telemetry
 		None,
 		// Protocol ID
-		Some("frequency-local"),
+		Some("frequency-rococo-local"),
 		// Fork ID
 		None,
 		// Properties
@@ -221,7 +221,7 @@ fn testnet_genesis(
 		// of this.
 		aura: Default::default(),
 		aura_ext: Default::default(),
-		#[cfg(any(not(feature = "frequency-no-relay"), feature = "all-frequency-features"))]
+		#[cfg(any(not(feature = "frequency-no-relay"), feature = "frequency-lint-check"))]
 		parachain_system: Default::default(),
 		sudo: SudoConfig {
 			// Assign network admin rights.

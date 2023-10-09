@@ -1,3 +1,5 @@
+// File originally from https://github.com/paritytech/cumulus/blob/master/parachain-template/node/src/command.rs
+
 use crate::{
 	benchmarking::{inherent_benchmark_data, RemarkBuilder},
 	cli::{Cli, RelayChainCli, Subcommand},
@@ -15,7 +17,6 @@ use sc_cli::{
 	NetworkParams, Result, RuntimeVersion, SharedParams, SubstrateCli,
 };
 use sc_service::config::{BasePath, PrometheusConfig};
-use std::net::SocketAddr;
 
 enum ChainIdentity {
 	Frequency,
@@ -34,7 +35,7 @@ impl IdentifyChain for dyn sc_service::ChainSpec {
 			ChainIdentity::Frequency
 		} else if self.id() == "frequency-rococo" {
 			ChainIdentity::FrequencyRococo
-		} else if self.id() == "frequency-local" {
+		} else if self.id() == "frequency-rococo-local" {
 			ChainIdentity::FrequencyLocal
 		} else if self.id() == "dev" {
 			ChainIdentity::FrequencyDev
@@ -72,10 +73,10 @@ fn load_spec(id: &str) -> std::result::Result<Box<dyn ChainSpec>, String> {
 		"dev" | "frequency-no-relay" =>
 			return Ok(Box::new(chain_spec::frequency_rococo::development_config())),
 		#[cfg(feature = "frequency-rococo-local")]
-		"frequency-local" | "frequency-rococo-local" =>
+		"frequency-rococo-local" =>
 			return Ok(Box::new(chain_spec::frequency_rococo::local_testnet_config())),
 		#[cfg(feature = "frequency-rococo-testnet")]
-		"frequency-rococo" | "rococo" | "testnet" =>
+		"frequency-rococo-testnet" | "frequency-rococo" | "rococo" | "testnet" =>
 			return Ok(Box::new(chain_spec::frequency_rococo::load_frequency_rococo_spec())),
 		path => {
 			if path.is_empty() {
@@ -429,12 +430,8 @@ impl DefaultConfigurationValues for RelayChainCli {
 		30334
 	}
 
-	fn rpc_ws_listen_port() -> u16 {
+	fn rpc_listen_port() -> u16 {
 		9945
-	}
-
-	fn rpc_http_listen_port() -> u16 {
-		9934
 	}
 
 	fn prometheus_listen_port() -> u16 {
@@ -464,18 +461,6 @@ impl CliConfiguration<Self> for RelayChainCli {
 			.shared_params()
 			.base_path()?
 			.or_else(|| self.base_path.clone().map(Into::into)))
-	}
-
-	fn rpc_http(&self, default_listen_port: u16) -> Result<Option<SocketAddr>> {
-		self.base.base.rpc_http(default_listen_port)
-	}
-
-	fn rpc_ipc(&self) -> Result<Option<String>> {
-		self.base.base.rpc_ipc()
-	}
-
-	fn rpc_ws(&self, default_listen_port: u16) -> Result<Option<SocketAddr>> {
-		self.base.base.rpc_ws(default_listen_port)
 	}
 
 	fn prometheus_config(
@@ -519,10 +504,6 @@ impl CliConfiguration<Self> for RelayChainCli {
 
 	fn rpc_methods(&self) -> Result<sc_service::config::RpcMethods> {
 		self.base.base.rpc_methods()
-	}
-
-	fn rpc_ws_max_connections(&self) -> Result<Option<usize>> {
-		self.base.base.rpc_ws_max_connections()
 	}
 
 	fn rpc_cors(&self, is_dev: bool) -> Result<Option<Vec<String>>> {

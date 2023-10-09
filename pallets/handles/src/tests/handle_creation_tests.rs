@@ -1,40 +1,9 @@
 use crate::{tests::mock::*, Error, Event};
 use codec::Decode;
-use common_primitives::{handles::SequenceIndex, msa::MessageSourceId};
-use frame_support::{assert_noop, assert_ok, dispatch::DispatchResult};
-use handles_utils::converter::convert_to_canonical;
+use common_primitives::{handles::HANDLE_BYTES_MAX, msa::MessageSourceId};
+use frame_support::{assert_err, assert_noop, assert_ok, dispatch::DispatchResult};
 use sp_core::{sr25519, Encode, Pair};
 use sp_std::collections::btree_set::BTreeSet;
-
-/// Creates a full display handle by combining a base handle string with a suffix generated
-/// from an index into the suffix sequence.
-///
-/// # Arguments
-///
-/// * `base_handle_str` - The base handle string.
-/// * `suffix_sequence_index` - The index into the suffix sequence.
-///
-/// # Returns
-///
-/// * `DisplayHandle` - The full display handle.
-///
-fn create_full_handle_for_index(
-	base_handle_str: &str,
-	suffix_sequence_index: SequenceIndex,
-) -> Vec<u8> {
-	// Convert base handle into a canonical base
-	let canonical_handle_str = convert_to_canonical(&base_handle_str);
-
-	// Generate suffix from index into the suffix sequence
-	let suffix = Handles::generate_suffix_for_canonical_handle(
-		&canonical_handle_str,
-		suffix_sequence_index as usize,
-	)
-	.unwrap_or_default();
-
-	let display_handle = Handles::build_full_display_handle(base_handle_str, suffix).unwrap();
-	display_handle.into_inner()
-}
 
 struct TestCase<T> {
 	handle: &'static str,
@@ -234,6 +203,26 @@ fn claim_handle_invalid_length_too_short() {
 }
 
 #[test]
+fn claim_handle_canonical_invalid_length_too_short() {
+	// Try to claim a 1 character handle which is under the character limit
+	new_test_ext().execute_with(|| {
+		let alice = sr25519::Pair::from_seed(&[0; 32]);
+		let expiration = 100;
+		let (payload, proof) =
+			get_signed_claims_payload(&alice, "a         b".as_bytes().to_vec(), expiration);
+		assert_noop!(
+			Handles::claim_handle(
+				RuntimeOrigin::signed(alice.public().into()),
+				alice.public().into(),
+				proof,
+				payload
+			),
+			Error::<Test>::InvalidHandleCharacterLength
+		);
+	});
+}
+
+#[test]
 fn claim_handle_invalid_byte_length() {
 	// Try to claim a character handle which is over the byte limit but under the character limit
 	// ℂн𝔸RℒℰᏕ𝔇𝔸𐒴𑣯1𝒩𝓐𑣯𝔸R𝔻Ꮥ is 19 characters but 61 bytes
@@ -367,4 +356,38 @@ fn claim_handle_with_max_bytes_should_get_correct_display_handle() {
 		assert!(msa_id_from_state.is_some());
 		assert_eq!(msa_id_from_state.unwrap(), msa_id);
 	});
+}
+
+#[test]
+fn test_verify_handle_length() {
+	new_test_ext().execute_with(|| {
+		// Max bytes handle is ok
+		let handle_str: String = std::iter::repeat('*').take((HANDLE_BYTES_MAX) as usize).collect();
+		let handle = handle_str.as_bytes().to_vec();
+		assert_ok!(Handles::verify_max_handle_byte_length(handle));
+
+		// However, max bytes handle plus 1 is not ok
+		let handle_str: String =
+			std::iter::repeat('*').take((HANDLE_BYTES_MAX + 1) as usize).collect();
+		let handle = handle_str.as_bytes().to_vec();
+		assert_err!(
+			Handles::verify_max_handle_byte_length(handle),
+			Error::<Test>::InvalidHandleByteLength
+		);
+	});
+}
+
+#[test]
+fn test_validate_handle() {
+	new_test_ext().execute_with(|| {
+		let good_handle: String = String::from("MyBonny");
+		assert_eq!(Handles::validate_handle(good_handle.as_bytes().to_vec()), true);
+
+		let too_long_handle: String =
+			std::iter::repeat('*').take((HANDLE_BYTES_MAX + 1) as usize).collect();
+		assert_eq!(Handles::validate_handle(too_long_handle.as_bytes().to_vec()), false);
+
+		let handle_with_emoji = format_args!("John{}", '\u{1F600}').to_string();
+		assert_eq!(Handles::validate_handle(handle_with_emoji.as_bytes().to_vec()), false);
+	})
 }

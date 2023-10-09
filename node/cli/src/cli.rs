@@ -1,7 +1,15 @@
 //! Frequency CLI library.
-use std::path::PathBuf;
+
+// File originally from https://github.com/paritytech/cumulus/blob/master/parachain-template/node/src/cli.rs
 
 use crate::{ExportMetadataCmd, ExportRuntimeVersionCmd};
+use std::path::PathBuf;
+
+#[cfg(feature = "frequency-no-relay")]
+use std::num::NonZeroU16;
+
+#[cfg(feature = "frequency-no-relay")]
+use cli_opt::SealingMode;
 
 /// Sub-commands supported by the collator.
 #[derive(Debug, clap::Subcommand)]
@@ -76,22 +84,30 @@ pub struct Cli {
 	#[clap(raw = true)]
 	pub relay_chain_args: Vec<String>,
 
+	#[cfg(feature = "frequency-no-relay")]
+	#[clap(long = "instant-sealing", help = "Deprecated.  Use --sealing=instant instead.")]
+	pub instant_sealing: bool,
+
+	#[cfg(feature = "frequency-no-relay")]
+	#[clap(long = "manual-sealing", help = "Deprecated.  Use --sealing=manual instead.")]
+	pub manual_sealing: bool,
+
 	/// Instant block sealing
 	/// Blocks are triggered to be formed each time a transaction hits the validated transaction pool
 	/// Empty blocks can also be formed using the `engine_createBlock` RPC
-	///
-	/// Can only be used with frequency-no-relay and frequency-rococo-local feature flags
-	#[cfg(any(feature = "frequency-no-relay", feature = "frequency-rococo-local"))]
-	#[clap(long = "instant-sealing")]
-	pub instant_sealing: bool,
+	#[cfg(feature = "frequency-no-relay")]
+	#[clap(long, value_enum, help = "The sealing mode", default_value_t=SealingMode::Instant)]
+	pub sealing: SealingMode,
 
-	/// Manual block sealing
-	/// Blocks are only formed using the `engine_createBlock` RPC
-	///
-	/// Can only be used with frequency-no-relay and frequency-rococo-local feature flags
-	#[cfg(any(feature = "frequency-no-relay", feature = "frequency-rococo-local"))]
-	#[clap(long = "manual-sealing")]
-	pub manual_sealing: bool,
+	/// Interval in seconds for interval sealing.
+	#[cfg(feature = "frequency-no-relay")]
+	#[clap(long, help = "The interval in seconds", default_value = "12", value_name = "SECONDS")]
+	pub sealing_interval: NonZeroU16,
+
+	/// Whether to create empty blocks in manual and interval sealing modes.
+	#[cfg(feature = "frequency-no-relay")]
+	#[clap(long, help = "Create empty blocks in interval sealing modes", default_value = "false")]
+	pub sealing_create_empty_blocks: bool,
 }
 
 #[derive(Debug)]
@@ -115,7 +131,11 @@ impl RelayChainCli {
 		let extension =
 			frequency_service::chain_spec::Extensions::try_get(&*para_config.chain_spec);
 		let chain_id = extension.map(|e| e.relay_chain.clone());
-		let base_path = para_config.base_path.as_ref().map(|x| x.path().join("polkadot"));
-		Self { base_path, chain_id, base: clap::Parser::parse_from(relay_chain_args) }
+		let base_path = para_config.base_path.path().join("polkadot");
+		Self {
+			base_path: Some(base_path),
+			chain_id,
+			base: clap::Parser::parse_from(relay_chain_args),
+		}
 	}
 }

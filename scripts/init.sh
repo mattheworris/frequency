@@ -43,7 +43,7 @@ stop-frequency-docker)
 
 start-frequency)
   printf "\nBuilding frequency with runtime '$parachain' and id '$para_id'...\n"
-  cargo build --release --features frequency-rococo-local
+  cargo build --features frequency-rococo-local
 
   parachain_dir=$base_dir/parachain/${para_id}
   mkdir -p $parachain_dir;
@@ -54,23 +54,21 @@ start-frequency)
   fi
 
   ./scripts/run_collator.sh \
-    --chain="frequency-local" --alice \
+    --chain="frequency-rococo-local" --alice \
     --base-path=$parachain_dir/data \
     --wasm-execution=compiled \
     --execution=wasm \
     --force-authoring \
     --port $((30333)) \
-    --rpc-port $((9933)) \
-    --ws-port $((9944)) \
+    --rpc-port $((9944)) \
     --rpc-external \
     --rpc-cors all \
-    --ws-external \
     --rpc-methods=Unsafe \
-    --state-cache-size 0 \
+    --trie-cache-size 0 \
   ;;
 
 start-frequency-instant)
-  printf "\nBuilding Frequency with runtime instant sealing ...\n"
+  printf "\nBuilding Frequency without relay. Running with instant sealing ...\n"
   cargo build --features frequency-no-relay
 
   parachain_dir=$base_dir/parachain/${para_id}
@@ -84,24 +82,78 @@ start-frequency-instant)
   ./target/debug/frequency \
     --dev \
     -lruntime=debug \
-    --instant-sealing \
+    --sealing=instant \
+    --wasm-execution=compiled \
+    --execution=wasm \
+    --no-telemetry \
+    --no-prometheus \
+    --port $((30333)) \
+    --rpc-port $((9944)) \
+    --rpc-external \
+    --rpc-cors all \
+    --rpc-methods=Unsafe \
+    --tmp
+  ;;
+
+start-frequency-interval)
+  printf "\nBuilding Frequency without relay.  Running with interval sealing ...\n"
+  cargo build --features frequency-no-relay
+
+  parachain_dir=$base_dir/parachain/${para_id}
+  mkdir -p $parachain_dir;
+
+  if [ "$2" == "purge" ]; then
+    echo "purging parachain..."
+    rm -rf $parachain_dir
+  fi
+
+  ./target/debug/frequency \
+    --dev \
+    -lruntime=debug \
+    --sealing=interval \
+    --wasm-execution=compiled \
+    --execution=wasm \
+    --no-telemetry \
+    --no-prometheus \
+    --port $((30333)) \
+    --rpc-port $((9944)) \
+    --rpc-external \
+    --rpc-cors all \
+    --rpc-methods=Unsafe \
+    --tmp
+  ;;
+
+start-frequency-native)
+  printf "\nBuilding Frequency without relay. Running with instant sealing, native execution ...\n"
+  cargo build --features frequency-no-relay
+
+  parachain_dir=$base_dir/parachain/${para_id}
+  mkdir -p $parachain_dir;
+
+  if [ "$2" == "purge" ]; then
+    echo "purging parachain..."
+    rm -rf $parachain_dir
+  fi
+
+  ./target/debug/frequency \
+    --dev \
+    -lruntime=debug \
+    --sealing=instant \
     --wasm-execution=compiled \
     --execution=native \
     --no-telemetry \
     --no-prometheus \
     --port $((30333)) \
-    --rpc-port $((9933)) \
-    --ws-port $((9944)) \
+    --rpc-port $((9944)) \
     --rpc-external \
     --rpc-cors all \
-    --ws-external \
     --rpc-methods=Unsafe \
     --tmp
   ;;
 
 start-frequency-manual)
-  printf "\nBuilding frequency with runtime manual sealing ...\n"
-  cargo build --locked --features frequency-no-relay
+  printf "\nBuilding frequency without relay.  Running with manual sealing ...\n"
+  cargo build --features frequency-no-relay
 
   parachain_dir=$base_dir/parachain/${para_id}
   mkdir -p $parachain_dir;
@@ -119,17 +171,15 @@ start-frequency-manual)
   ./target/debug/frequency \
     --dev \
     -lruntime=debug \
-    --manual-sealing \
+    --sealing=manual \
     --wasm-execution=compiled \
     --execution=wasm \
     --no-telemetry \
     --no-prometheus \
     --port $((30333)) \
-    --rpc-port $((9933)) \
-    --ws-port $((9944)) \
+    --rpc-port $((9944)) \
     --rpc-external \
     --rpc-cors all \
-    --ws-external \
     --rpc-methods=Unsafe \
     --tmp
   ;;
@@ -139,26 +189,22 @@ start-frequency-container)
   parachain_dir=$base_dir/parachain/${para_id}
   mkdir -p $parachain_dir;
   frequency_default_port=$((30333))
-  frequency_default_rpc_port=$((9933))
-  frequency_default_ws_port=$((9944))
+  frequency_default_rpc_port=$((9944))
   frequency_port="${Frequency_PORT:-$frequency_default_port}"
   frequency_rpc_port="${Frequency_RPC_PORT:-$frequency_default_rpc_port}"
-  frequency_ws_port="${Frequency_WS_PORT:-$frequency_default_ws_port}"
 
   ./scripts/run_collator.sh \
-    --chain="frequency-local" --alice \
+    --chain="frequency-rococo-local" --alice \
     --base-path=$parachain_dir/data \
     --wasm-execution=compiled \
     --execution=wasm \
     --force-authoring \
     --port "${frequency_port}" \
     --rpc-port "${frequency_rpc_port}" \
-    --ws-port "${frequency_ws_port}" \
     --rpc-external \
     --rpc-cors all \
-    --ws-external \
     --rpc-methods=Unsafe \
-    --state-cache-size 0 \
+    --trie-cache-size 0 \
   ;;
 
 register-frequency-rococo-local)
@@ -176,11 +222,11 @@ onboard-frequency-rococo-local)
 
    wasm_location="$onboard_dir/${parachain}-${para_id}.wasm"
     if [ "$docker_onboard" == "true" ]; then
-      genesis=$(docker run -it {REPO_NAME}/frequency:${frequency_docker_image_tag} export-genesis-state --chain="frequency-local")
-      docker run -it {REPO_NAME}/frequency:${frequency_docker_image_tag} export-genesis-wasm --chain="frequency-local" > $wasm_location
+      genesis=$(docker run -it {REPO_NAME}/frequency:${frequency_docker_image_tag} export-genesis-state --chain="frequency-rococo-local")
+      docker run -it {REPO_NAME}/frequency:${frequency_docker_image_tag} export-genesis-wasm --chain="frequency-rococo-local" > $wasm_location
     else
-      genesis=$(./target/release/frequency export-genesis-state --chain="frequency-local")
-      ./target/release/frequency export-genesis-wasm --chain="frequency-local" > $wasm_location
+      genesis=$(./target/debug/frequency export-genesis-state --chain="frequency-rococo-local")
+      ./target/debug/frequency export-genesis-wasm --chain="frequency-rococo-local" > $wasm_location
     fi
 
   echo "WASM path:" "${wasm_location}"
@@ -201,15 +247,13 @@ upgrade-frequency-rococo-local)
   root_dir=$(git rev-parse --show-toplevel)
   echo "root_dir is set to $root_dir"
 
-  # Due to defaults and profile=release, the target directory will be $root_dir/target/release
+  # Due to defaults and profile=debug, the target directory will be $root_dir/target/debug
   cargo build \
-    --locked \
-    --profile release \
     --package frequency-runtime \
     --features frequency-rococo-local \
     -Z unstable-options
 
-  wasm_location=$root_dir/target/release/wbuild/frequency-runtime/frequency_runtime.compact.compressed.wasm
+  wasm_location=$root_dir/target/debug/wbuild/frequency-runtime/frequency_runtime.compact.compressed.wasm
 
   ./scripts/runtime-upgrade.sh "//Alice" "ws://0.0.0.0:9944" $wasm_location
 
@@ -222,19 +266,15 @@ upgrade-frequency-no-relay)
   root_dir=$(git rev-parse --show-toplevel)
   echo "root_dir is set to $root_dir"
 
-  # Due to defaults and profile=release, the target directory will be $root_dir/target/release
+  # Due to defaults and profile=debug, the target directory will be $root_dir/target/debug
   cargo build \
-    --locked \
-    --profile release \
     --package frequency-runtime \
     --features frequency-no-relay \
     -Z unstable-options
 
-  wasm_location=$root_dir/target/release/wbuild/frequency-runtime/frequency_runtime.compact.compressed.wasm
+  wasm_location=$root_dir/target/debug/wbuild/frequency-runtime/frequency_runtime.compact.compressed.wasm
 
-  ./scripts/runtime-upgrade.sh "//Alice" "ws://0.0.0.0:9944" $wasm_location
-
-  ./scripts/enact-upgrade.sh "//Alice" "ws://0.0.0.0:9944" $wasm_location
+  ./scripts/runtime-dev-upgrade.sh "//Alice" "ws://0.0.0.0:9944" $wasm_location
 
   ;;
 

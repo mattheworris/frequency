@@ -85,6 +85,7 @@ pub enum PageError {
 	PageSizeOverflow,
 }
 
+/// Warning: This struct is `deprecated`. please use `ItemizedSignaturePayloadV2` instead
 /// Payload containing all necessary fields to verify Itemized related signatures
 #[derive(Encode, Decode, TypeInfo, MaxEncodedLen, PartialEq, RuntimeDebugNoBound, Clone)]
 #[scale_info(skip_type_params(T))]
@@ -111,6 +112,29 @@ pub struct ItemizedSignaturePayload<T: Config> {
 	>,
 }
 
+/// Payload containing all necessary fields to verify Itemized related signatures
+#[derive(Encode, Decode, TypeInfo, MaxEncodedLen, PartialEq, RuntimeDebugNoBound, Clone)]
+#[scale_info(skip_type_params(T))]
+pub struct ItemizedSignaturePayloadV2<T: Config> {
+	/// Schema id of this storage
+	#[codec(compact)]
+	pub schema_id: SchemaId,
+
+	/// Hash of targeted page to avoid race conditions
+	#[codec(compact)]
+	pub target_hash: PageHash,
+
+	/// The block number at which the signed proof will expire
+	pub expiration: T::BlockNumber,
+
+	/// Actions to apply to storage from possible: [`ItemAction`]
+	pub actions: BoundedVec<
+		ItemAction<<T as Config>::MaxItemizedBlobSizeBytes>,
+		<T as Config>::MaxItemizedActionsCount,
+	>,
+}
+
+/// Warning: This struct is `deprecated`. please use `PaginatedUpsertSignaturePayloadV2` instead
 /// Payload containing all necessary fields to verify signatures to upsert a Paginated storage
 #[derive(Encode, Decode, TypeInfo, MaxEncodedLen, PartialEq, RuntimeDebugNoBound, Clone)]
 #[scale_info(skip_type_params(T))]
@@ -138,6 +162,30 @@ pub struct PaginatedUpsertSignaturePayload<T: Config> {
 	pub payload: BoundedVec<u8, <T as Config>::MaxPaginatedPageSizeBytes>,
 }
 
+/// Payload containing all necessary fields to verify signatures to upsert a Paginated storage
+#[derive(Encode, Decode, TypeInfo, MaxEncodedLen, PartialEq, RuntimeDebugNoBound, Clone)]
+#[scale_info(skip_type_params(T))]
+pub struct PaginatedUpsertSignaturePayloadV2<T: Config> {
+	/// Schema id of this storage
+	#[codec(compact)]
+	pub schema_id: SchemaId,
+
+	/// Page id of this storage
+	#[codec(compact)]
+	pub page_id: PageId,
+
+	/// Hash of targeted page to avoid race conditions
+	#[codec(compact)]
+	pub target_hash: PageHash,
+
+	/// The block number at which the signed proof will expire
+	pub expiration: T::BlockNumber,
+
+	/// payload to update the page with
+	pub payload: BoundedVec<u8, <T as Config>::MaxPaginatedPageSizeBytes>,
+}
+
+/// Warning: This struct is `deprecated`. please use `PaginatedDeleteSignaturePayloadV2` instead
 /// Payload containing all necessary fields to verify signatures to delete a Paginated storage
 #[derive(Encode, Decode, TypeInfo, MaxEncodedLen, PartialEq, RuntimeDebugNoBound, Clone)]
 #[scale_info(skip_type_params(T))]
@@ -146,6 +194,26 @@ pub struct PaginatedDeleteSignaturePayload<T: Config> {
 	#[codec(compact)]
 	pub msa_id: MessageSourceId,
 
+	/// Schema id of this storage
+	#[codec(compact)]
+	pub schema_id: SchemaId,
+
+	/// Page id of this storage
+	#[codec(compact)]
+	pub page_id: PageId,
+
+	/// Hash of targeted page to avoid race conditions
+	#[codec(compact)]
+	pub target_hash: PageHash,
+
+	/// The block number at which the signed proof will expire
+	pub expiration: T::BlockNumber,
+}
+
+/// Payload containing all necessary fields to verify signatures to delete a Paginated storage
+#[derive(Encode, Decode, TypeInfo, MaxEncodedLen, PartialEq, RuntimeDebugNoBound, Clone)]
+#[scale_info(skip_type_params(T))]
+pub struct PaginatedDeleteSignaturePayloadV2<T: Config> {
 	/// Schema id of this storage
 	#[codec(compact)]
 	pub schema_id: SchemaId,
@@ -226,7 +294,7 @@ impl<PageDataSize: Get<u32>> From<BoundedVec<u8, PageDataSize>> for Page<PageDat
 	}
 }
 
-/// Deserializing a Page from a Vec<u8> is used for reading from storage--
+/// Deserializing a Page from a `Vec<u8>` is used for reading from storage--
 /// so we must first read the nonce, then the data payload.
 impl<PageDataSize: Get<u32>> TryFrom<Vec<u8>> for Page<PageDataSize> {
 	type Error = ();

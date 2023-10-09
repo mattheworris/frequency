@@ -1,5 +1,5 @@
 import assert from "assert";
-import { options } from "../index";
+import { options } from "../index.js";
 import { ApiPromise } from "@polkadot/api";
 import { MockProvider } from "@polkadot/rpc-provider/mock";
 import { TypeRegistry } from "@polkadot/types";
@@ -28,6 +28,7 @@ describe("index", function () {
     const topLevelRuntimeApis = Object.keys((api.registry.knownTypes as any).runtime || {});
     assert.deepEqual(topLevelRuntimeApis, [
       "AdditionalRuntimeApi",
+      "CapacityTransactionPaymentRuntimeApi",
       "HandlesRuntimeApi",
       "MessagesRuntimeApi",
       "MsaRuntimeApi",

@@ -43,6 +43,8 @@
 // Substrate macros are tripping the clippy::expect_used lint.
 #![allow(clippy::expect_used)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![feature(rustdoc_missing_doc_code_examples)]
+#![allow(rustdoc::private_intra_doc_links)]
 // Strong Documentation Lints
 #![deny(
 	rustdoc::broken_intra_doc_links,
@@ -81,8 +83,6 @@ pub use pallet::*;
 pub mod weights;
 pub use types::*;
 pub use weights::*;
-
-pub mod migration;
 
 mod serde;
 
@@ -167,7 +167,6 @@ pub mod pallet {
 	}
 
 	#[pallet::pallet]
-	#[pallet::generate_store(pub(super) trait Store)]
 	#[pallet::storage_version(SCHEMA_STORAGE_VERSION)]
 	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
@@ -348,7 +347,7 @@ pub mod pallet {
 		}
 
 		/// Build the [`Schema`] and insert it into storage
-		/// Updates the [`CurrentSchemaIdentifierMaximum`] storage
+		/// Updates the `CurrentSchemaIdentifierMaximum` storage
 		pub fn add_schema(
 			model: BoundedVec<u8, T::SchemaModelMaxBytesBoundedVecLimit>,
 			model_type: ModelType,

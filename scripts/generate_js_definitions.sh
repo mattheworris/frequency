@@ -12,7 +12,7 @@ echo -e "${STEP_COLOR}Checking to see if Frequency is running...${NC}"
 echo ""
 echo -e "${MESSAGE}Is Frequency running?${NC}"
 
-PID=$(lsof -i tcp:9933 | grep frequency | grep -v grep | xargs | awk '{print $2}')
+PID=$(lsof -i tcp:9944 | grep frequency | grep -v grep | xargs | awk '{print $2}')
 
 if [ -z "$PID" ]
 then
@@ -21,7 +21,7 @@ then
     echo -e "${NC}"
     echo -e "${STEP_COLOR}Generating using CLI...${NC}"
     rm -f ./js/api-augment/metadata.json
-    cargo run --features frequency-rococo-local -- export-metadata --tmp --chain=frequency-local ./js/api-augment/metadata.json
+    cargo run --features frequency-rococo-local -- export-metadata --tmp --chain=frequency-rococo-local ./js/api-augment/metadata.json
     # cd into js dir
     cd "js/api-augment"
     npm install # in case things have changed

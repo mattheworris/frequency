@@ -3,7 +3,7 @@
 export RUST_LOG=info
 THIS_DIR=$( dirname -- "$0"; )
 PROJECT="${THIS_DIR}/.."
-PROFILE=production
+PROFILE=release
 PROFILE_DIR=${PROFILE}
 
 ALL_EXTERNAL_PALLETS=( \
@@ -51,7 +51,7 @@ function usage() {
         -s            Skip the build step; use existing binary for the current profile
 
         -t <profile>  Use '--profile=<profile>' in the build step & for locating the
-                      resulting binary. Valid targets are: dev,production,release,bench-dev
+                      resulting binary. Valid targets are: dev,release,bench-dev
 
                       (NOTE: using the 'bench-dev' profile will generate a warning in the WASM build.
                        this can safely be ignored. 'bench-dev' is a clone of 'release' and is useful
@@ -106,7 +106,7 @@ while getopts 'dh:p:st:v' flag; do
     t)
       # Set target profile
       case ${OPTARG} in
-        production|release|dev|bench-dev)
+        release|dev|bench-dev)
           PROFILE="${OPTARG}"
           PROFILE_DIR=${PROFILE}
           # For historical reasons, cargo puts dev builds in the "debug" directory
@@ -184,6 +184,7 @@ function run_benchmark() {
   --execution=wasm \
   --heap-pages=4096 \
   --wasm-execution=compiled \
+  --additional-trie-layers=20 \
   --steps=${2} \
   --repeat=${3} \
   --output=${4} \
@@ -196,7 +197,7 @@ function run_benchmark() {
 
 if [[ ${skip_build} == false ]]
 then
-  CMD="cargo build --profile=${PROFILE} --features=runtime-benchmarks,all-frequency-features --workspace"
+  CMD="cargo build --profile=${PROFILE} --features=runtime-benchmarks,frequency-lint-check --workspace"
   echo ${CMD}
   ${CMD} || exit_err
 fi
@@ -221,5 +222,5 @@ if [[ -n "${OVERHEAD}" ]]
 then
   echo "Running extrinsic and block overhead benchmark"
   echo " "
-  ${BENCHMARK} overhead --execution=wasm --wasm-execution=compiled --weight-path=runtime/common/src/weights --chain=dev --warmup=10 --repeat=100 || exit_err
+  ${BENCHMARK} overhead --execution=wasm --wasm-execution=compiled --weight-path=runtime/common/src/weights --chain=dev --warmup=10 --repeat=100 --header="./HEADER-APACHE2" || exit_err
 fi

@@ -29,6 +29,7 @@
 // Substrate macros are tripping the clippy::expect_used lint.
 #![allow(clippy::expect_used)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![feature(rustdoc_missing_doc_code_examples)]
 // Strong Documentation Lints
 #![deny(
 	rustdoc::broken_intra_doc_links,
@@ -86,6 +87,7 @@ impl<T: Config> HandleProvider for Pallet<T> {
 
 #[frame_support::pallet]
 pub mod pallet {
+
 	use super::*;
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -120,7 +122,6 @@ pub mod pallet {
 
 	// Storage
 	#[pallet::pallet]
-	#[pallet::generate_store(pub (super) trait Store)]
 	pub struct Pallet<T>(_);
 
 	/// - Keys: k1: `CanonicalBase`, k2: `HandleSuffix`
@@ -297,6 +298,19 @@ pub mod pallet {
 			Ok(())
 		}
 
+		/// Verifies max user handle size in bytes to address potential panic condition
+		///
+		/// # Arguments
+		///
+		/// * `handle` - The user handle.
+		///
+		/// # Errors
+		/// * [`Error::InvalidHandleByteLength`]
+		pub fn verify_max_handle_byte_length(handle: Vec<u8>) -> DispatchResult {
+			ensure!(handle.len() as u32 <= HANDLE_BYTES_MAX, Error::<T>::InvalidHandleByteLength);
+			Ok(())
+		}
+
 		/// The furthest in the future a mortality_block value is allowed
 		/// to be for current_block
 		/// This is calculated to be past the risk of a replay attack
@@ -345,7 +359,7 @@ pub mod pallet {
 		/// * `origin` - The origin of the caller.
 		/// * `msa_owner_key` - The public key of the MSA owner.
 		/// * `proof` - The multi-signature proof for the payload.
-		/// * `payload` - The payload containing the information needed to claim the handle.
+		/// * `payload` - The payload containing the information needed to claim a new handle.
 		///
 		/// # Errors
 		///
@@ -359,7 +373,6 @@ pub mod pallet {
 		/// # Events
 		/// * [`Event::HandleClaimed`]
 		///
-
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::claim_handle(payload.base_handle.len() as u32))]
 		pub fn claim_handle(
@@ -371,10 +384,7 @@ pub mod pallet {
 			let _ = ensure_signed(origin)?;
 
 			// Validation: Check for base_handle size to address potential panic condition
-			ensure!(
-				payload.base_handle.len() as u32 <= HANDLE_BASE_BYTES_MAX,
-				Error::<T>::InvalidHandleByteLength
-			);
+			Self::verify_max_handle_byte_length(payload.base_handle.clone())?;
 
 			// Validation: caller must already have a MSA id
 			let msa_id = T::MsaInfoProvider::ensure_valid_msa_key(&msa_owner_key)
@@ -417,9 +427,72 @@ pub mod pallet {
 			let msa_id = T::MsaInfoProvider::ensure_valid_msa_key(&msa_owner_key)
 				.map_err(|_| Error::<T>::InvalidMessageSourceAccount)?;
 
-			let display_handle = Self::do_retire_handle(msa_id)?;
+			let display_handle: Vec<u8> = Self::do_retire_handle(msa_id)?;
 
 			Self::deposit_event(Event::HandleRetired { msa_id, handle: display_handle });
+			Ok(())
+		}
+
+		/// Changes the handle for a caller's MSA (Message Source Account) based on the provided payload.
+		/// This function performs several validations before claiming the handle, including checking
+		/// the size of the base_handle, ensuring the caller has valid MSA keys,
+		/// verifying the payload signature, and finally calling the internal `do_retire_handle` and `do_claim_handle` functions
+		/// to retire the current handle and claim the new one.
+		///
+		/// # Arguments
+		///
+		/// * `origin` - The origin of the caller.
+		/// * `msa_owner_key` - The public key of the MSA owner.
+		/// * `proof` - The multi-signature proof for the payload.
+		/// * `payload` - The payload containing the information needed to change an existing handle.
+		///
+		/// # Errors
+		///
+		/// This function may return an error as part of `DispatchResult` if any of the following
+		/// validations fail:
+		///
+		/// * [`Error::InvalidHandleByteLength`] - The base_handle size exceeds the maximum allowed size.
+		/// * [`Error::InvalidMessageSourceAccount`] - The caller does not have a valid  `MessageSourceId`.
+		/// * [`Error::InvalidSignature`] - The payload signature verification fails.
+		///
+		/// # Events
+		/// * [`Event::HandleRetired`]
+		/// * [`Event::HandleClaimed`]
+		///
+		#[pallet::call_index(2)]
+		#[pallet::weight(T::WeightInfo::change_handle(payload.base_handle.len() as u32))]
+		pub fn change_handle(
+			origin: OriginFor<T>,
+			msa_owner_key: T::AccountId,
+			proof: MultiSignature,
+			payload: ClaimHandlePayload<T::BlockNumber>,
+		) -> DispatchResult {
+			let _ = ensure_signed(origin)?;
+
+			// Validation: Check for base_handle size to address potential panic condition
+			Self::verify_max_handle_byte_length(payload.base_handle.clone())?;
+
+			// Validation: caller must already have a MSA id
+			let msa_id = T::MsaInfoProvider::ensure_valid_msa_key(&msa_owner_key)
+				.map_err(|_| Error::<T>::InvalidMessageSourceAccount)?;
+
+			// Validation: The signature is within the mortality window
+			Self::verify_signature_mortality(payload.expiration.into())?;
+
+			// Validation: Verify the payload was signed
+			Self::verify_signed_payload(&proof, &msa_owner_key, payload.encode())?;
+
+			// Get existing handle to retire
+			Self::get_display_name_for_msa_id(msa_id).ok_or(Error::<T>::MSAHandleDoesNotExist)?;
+
+			// Retire old handle
+			let old_display_handle: Vec<u8> = Self::do_retire_handle(msa_id)?;
+			Self::deposit_event(Event::HandleRetired { msa_id, handle: old_display_handle });
+
+			let display_handle = Self::do_claim_handle(msa_id, payload.clone())?;
+
+			Self::deposit_event(Event::HandleClaimed { msa_id, handle: display_handle.clone() });
+
 			Ok(())
 		}
 	}
@@ -467,7 +540,7 @@ pub mod pallet {
 		/// # Returns
 		///
 		/// * `PresumptiveSuffixesResponse` - The response containing the next available suffixes.
-		/// ```
+		///
 		pub fn get_next_suffixes(
 			base_handle: BaseHandle,
 			count: u16,
@@ -553,6 +626,8 @@ pub mod pallet {
 				&canonical_handle_str,
 			)?;
 
+			Self::validate_canonical_handle_length(&canonical_handle_str)?;
+
 			// Generate suffix from the next available index into the suffix sequence
 			let suffix_sequence_index =
 				Self::get_next_suffix_index_for_canonical_handle(canonical_base.clone())?;
@@ -594,7 +669,7 @@ pub mod pallet {
 
 			// Validation: `BaseHandle` character length must be within range
 			ensure!(
-				len >= HANDLE_BASE_CHARS_MIN && len <= HANDLE_BASE_CHARS_MAX,
+				len >= HANDLE_CHARS_MIN && len <= HANDLE_CHARS_MAX,
 				Error::<T>::InvalidHandleCharacterLength
 			);
 
@@ -613,6 +688,17 @@ pub mod pallet {
 			ensure!(
 				consists_of_supported_unicode_character_sets(&base_handle_str),
 				Error::<T>::HandleDoesNotConsistOfSupportedCharacterSets
+			);
+			Ok(())
+		}
+
+		fn validate_canonical_handle_length(canonical_handle_str: &str) -> DispatchResult {
+			let len = canonical_handle_str.chars().count() as u32;
+
+			// Validation: `Canonical` character length must be within range
+			ensure!(
+				len >= HANDLE_CHARS_MIN && len <= HANDLE_CHARS_MAX,
+				Error::<T>::InvalidHandleCharacterLength
 			);
 			Ok(())
 		}
@@ -670,6 +756,26 @@ pub mod pallet {
 			CanonicalBaseHandleAndSuffixToMSAId::<T>::remove(canonical_base, suffix_num);
 
 			Ok(display_name_str.as_bytes().to_vec())
+		}
+
+		/// Checks whether the supplied handle passes all the checks performed by a
+		/// claim_handle call.
+		/// # Returns
+		/// * true if it is valid or false if invalid
+		pub fn validate_handle(handle: Vec<u8>) -> bool {
+			return match Self::validate_base_handle(handle) {
+				Ok(base_handle_str) => {
+					// Convert base handle into a canonical base
+					let (canonical_handle_str, _) =
+						Self::get_canonical_string_vec_from_base_handle(&base_handle_str);
+
+					return Self::validate_canonical_handle_contains_characters_in_supported_ranges(
+						&canonical_handle_str,
+					)
+					.is_ok()
+				},
+				_ => false,
+			}
 		}
 
 		/// Converts a base handle to a canonical base.

@@ -9,11 +9,14 @@ on:
       - "*-development" # Feature Branches should suffix with -development
 env:
   BIN_DIR: target/release
+  PR_LABEL_METADATA_CHANGED: metadata-changed
+  PR_LABEL_METADATA_VERSION_NOT_INCREMENTED: metadata-version-not-incremented
+
 jobs:
   changes:
     name: Determine Changed Files
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     outputs:
       rust: ${{steps.filter.outputs.rust}}
       build-binary: ${{steps.filter.outputs.build-binary}}
@@ -21,13 +24,8 @@ jobs:
       run-integration-tests: ${{steps.filter.outputs.run-integration-tests}}
       ci-docker-image: ${{steps.filter.outputs.ci-docker-image}}
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y git
-          git config --global --add safe.directory /__w/frequency/frequency
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Check for Changed Files
         uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50
         id: filter
@@ -57,31 +55,47 @@ jobs:
             ci-docker-image:
               - 'tools/ci/docker/ci-base-image.dockerfile'
 
+  clear-metadata-labels:
+    name: Clear Metadata Labels
+    runs-on: ubuntu-20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
+    steps:
+      - name: Clear Metadata Changed Label
+        if: contains(github.event.pull_request.labels.*.name, env.PR_LABEL_METADATA_CHANGED)
+        uses: actions-ecosystem/action-remove-labels@2ce5d41b4b6aa8503e285553f75ed56e0a40bae0
+        with:
+          labels: |
+            ${{env.PR_LABEL_METADATA_CHANGED}}
+      - name: Clear Metadata Version Not Incremented Label
+        if: contains(github.event.pull_request.labels.*.name, env.PR_LABEL_METADATA_VERSION_NOT_INCREMENTED)
+        uses: actions-ecosystem/action-remove-labels@2ce5d41b4b6aa8503e285553f75ed56e0a40bae0
+        with:
+          labels: |
+            ${{env.PR_LABEL_METADATA_VERSION_NOT_INCREMENTED}}
+
   # Workaround to handle skipped required check inside matrix
   # https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/defining-the-mergeability-of-pull-requests/troubleshooting-required-status-checks
   build-binaries-dummy:
     needs: changes
     if: needs.changes.outputs.build-binary != 'true'
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
     name: Build ${{matrix.network}} Binary on ${{matrix.branch_alias}} Branch
     strategy:
       matrix:
-        network: [rococo, mainnet]
-        # Match this include to the real build-binaries job
+        # Match this to the real build-binaries job
         include:
-          - git_branch: ${{github.head_ref}}
-            spec: frequency-rococo-local
-            branch_alias: pr
-            network: local
-          - git_branch: ${{github.head_ref}}
+          - network: dev
+            git_branch: ${{github.head_ref}}
             spec: frequency-no-relay
             branch_alias: pr
-            network: local
-          - git_branch: main
+          - network: local
+            git_branch: ${{github.head_ref}}
+            spec: frequency-rococo-local
+            branch_alias: pr
+          - network: local
+            git_branch: main
             spec: frequency-rococo-local
             branch_alias: main
-            network: local
           - network: rococo
             spec: frequency-rococo-testnet
             branch_alias: pr
@@ -98,37 +112,32 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        network: [rococo, mainnet]
         include:
-          - git_branch: ${{github.head_ref}}
-            spec: frequency-rococo-local
-            branch_alias: pr
-            network: local
-          - git_branch: ${{github.head_ref}}
+          - network: dev
+            git_branch: ${{github.head_ref}}
             spec: frequency-no-relay
             branch_alias: pr
-            network: local
-          - git_branch: main
+          - network: local
+            git_branch: ${{github.head_ref}}
+            spec: frequency-rococo-local
+            branch_alias: pr
+          - network: local
+            git_branch: main
             spec: frequency-rococo-local
             branch_alias: main
-            network: local
           - network: rococo
             spec: frequency-rococo-testnet
             branch_alias: pr
           - network: mainnet
             spec: frequency
             branch_alias: pr
-    runs-on: [self-hosted, Linux, X64, testing, v2]
-    container: public.ecr.aws/lts/ubuntu:20.04
+    runs-on: [self-hosted, Linux, X64, build, v2]
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     env:
       NETWORK: mainnet
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl protobuf-compiler build-essential libclang-dev file
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{matrix.git_branch}}
       - name: Set Env Vars
@@ -142,12 +151,6 @@ jobs:
       #   with:
       #     path: ${{env.BIN_DIR}}/${{env.FINAL_BIN_FILENAME}}
       #     key: binaries-${{runner.os}}-${{env.NETWORK}}-${{github.head_ref}}
-      - name: Install Rust Toolchain
-        if: steps.cache-binary.outputs.cache-hit != 'true'
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          targets: wasm32-unknown-unknown
-          toolchain: stable
       - name: Compile Binary
         if: steps.cache-binary.outputs.cache-hit != 'true'
         run: |
@@ -175,19 +178,10 @@ jobs:
     if: needs.changes.outputs.cargo-lock == 'true'
     name: Check for Vulnerable Crates
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl build-essential
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          components: rustfmt
-          toolchain: stable
+        uses: actions/checkout@v4
       - name: Set Up Cargo Deny
         run: |
           cargo install --force cargo-deny
@@ -200,20 +194,10 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     name: Verify Rust Code Format
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          set -x
-          apt-get update
-          apt-get install -y curl
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          components: rustfmt
-          toolchain: stable
+        uses: actions/checkout@v4
       - name: Check
         run: cargo fmt --check
 
@@ -221,24 +205,15 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     name: Lint Rust Code
-    runs-on: [self-hosted, Linux, X64, testing, v2]
-    container: public.ecr.aws/lts/ubuntu:20.04
+    runs-on: [self-hosted, Linux, X64, build, v2]
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl protobuf-compiler build-essential libclang-dev
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          components: clippy
-          toolchain: stable
+        uses: actions/checkout@v4
       - name: Lint
         run: |
           SKIP_WASM_BUILD=1 env -u RUSTFLAGS cargo clippy \
-            --features runtime-benchmarks,all-frequency-features \
+            --features runtime-benchmarks,frequency-lint-check \
             -- \
             -D warnings
 
@@ -246,66 +221,42 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     name: Verify Rust Developer Docs
-    runs-on: [self-hosted, Linux, X64, testing, v2]
-    container: public.ecr.aws/lts/ubuntu:20.04
+    runs-on: [self-hosted, Linux, X64, build, v2]
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl protobuf-compiler build-essential libclang-dev
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
-      - name: Build Rust Docs
-        run: RUSTDOCFLAGS="--enable-index-page --check -Zunstable-options" cargo doc --no-deps --features frequency
+        uses: actions/checkout@v4
+      - name: Build Docs
+        run: |
+          rustup target add wasm32-unknown-unknown
+          RUSTDOCFLAGS="--enable-index-page --check -Zunstable-options" cargo doc --no-deps --features frequency
 
   verify-rust-packages-and-deps:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     name: Verify Rust Packages and Dependencies
-    runs-on: [self-hosted, Linux, X64, testing, v2]
-    container: public.ecr.aws/lts/ubuntu:20.04
+    runs-on: [self-hosted, Linux, X64, build, v2]
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl protobuf-compiler build-essential libclang-dev
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          toolchain: stable
+        uses: actions/checkout@v4
       - name: Check
-        run: SKIP_WASM_BUILD= cargo check --features runtime-benchmarks,all-frequency-features
+        run: SKIP_WASM_BUILD= cargo check --features runtime-benchmarks,frequency-lint-check
 
   run-rust-tests:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     name: Run Rust Tests
-    runs-on: [self-hosted, Linux, X64, testing, v2]
-    container: public.ecr.aws/lts/ubuntu:20.04
+    runs-on: [self-hosted, Linux, X64, build, v2]
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl protobuf-compiler build-essential libclang-dev git
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          targets: wasm32-unknown-unknown
-          toolchain: stable
+        uses: actions/checkout@v4
       - name: Init Git
         run: |
           git config --global --add safe.directory /__w/frequency/frequency
       - name: Run Tests
-        run: cargo test --features runtime-benchmarks,all-frequency-features --workspace --release
+        run: cargo test --features runtime-benchmarks,frequency-lint-check --workspace --release
 
   calc-code-coverage:
     needs: changes
@@ -313,21 +264,11 @@ jobs:
     name: Calculate Code Coverage
     # This job currently fails on EKS runners and must be run on standalone until
     # https://www.pivotaltracker.com/story/show/185045668 is resolved.
-    runs-on: [self-hosted, Linux, X64, build]
-    container: public.ecr.aws/lts/ubuntu:20.04
+    runs-on: [self-hosted, Linux, X64, build, v1]
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl protobuf-compiler build-essential libclang-dev git
-          git --version
       - name: Check Out Repo
-        uses: actions/checkout@v3
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          targets: wasm32-unknown-unknown
-          toolchain: stable
+        uses: actions/checkout@v4
       - name: Generate and Upload Code Coverage
         id: codecov
         uses: ./.github/workflows/common/codecov
@@ -342,10 +283,12 @@ jobs:
       matrix:
         network: [rococo, mainnet]
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
     steps:
       - run: echo "Just a dummy matrix to satisfy GitHub required checks that were skipped"
 
+  # Could not port this job to container because this creates docker-in-docker
+  # situation and fails when srtool-ci container is trying to process files in
+  # the mapped volume which don't exist on the host
   verify-build-runtimes:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
@@ -353,37 +296,46 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        network: [rococo, mainnet]
+        network: [dev, rococo, mainnet]
         include:
+          - network: dev
+            build-profile: release
+            package: frequency-runtime
+            runtime-dir: runtime/frequency
+            built-wasm-file-name-prefix: frequency_runtime
+            features: frequency-no-relay
+            wasm-core-version: frequency-rococo
           - network: rococo
-            build-profile: production
+            build-profile: release
             package: frequency-runtime
             runtime-dir: runtime/frequency
+            built-wasm-file-name-prefix: frequency_runtime
             features: frequency-rococo-testnet
+            wasm-core-version: frequency-rococo
           - network: mainnet
-            build-profile: production
+            build-profile: release
             package: frequency-runtime
             runtime-dir: runtime/frequency
+            built-wasm-file-name-prefix: frequency_runtime
             features: frequency
-    runs-on: [self-hosted, Linux, X64, testing, v2]
-    container: public.ecr.aws/lts/ubuntu:20.04
+            wasm-core-version: frequency
+    runs-on: [self-hosted, Linux, X64, build, v2]
     steps:
       - name: Install Required Packages
         run: |
-          apt-get update
-          apt-get install -y curl protobuf-compiler build-essential libclang-dev file
-          curl -fsSL https://get.docker.com -o get-docker.sh
-          sh get-docker.sh
+          sudo apt-get update
+          sudo apt install -y wget file build-essential curl
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          toolchain: stable
+        # Match installation steps to CI base docker image
+        run: |
+          curl https://sh.rustup.rs -sSf | bash -s -- -y
+          echo "PATH=$HOME/.cargo/bin:$PATH" >> $GITHUB_ENV
       - name: Extract Runtime Spec Version
         run: |
-          echo "RUNTIME_SPEC_VERSION=$(sed -nr 's/spec_version:\s*([0-9]+),/\1/p' \
-            ${{matrix.runtime-dir}}/src/lib.rs | tr -d '[:space:]')" >> $GITHUB_ENV
+          echo "RUNTIME_SPEC_VERSION=$(awk '/spec_version:/ {match($0, /[0-9]+/); print substr($0, RSTART, RLENGTH); exit}' \
+            ${{matrix.runtime-dir}}/src/lib.rs)" >> $GITHUB_ENV
       - name: Validate Extracted Version
         shell: bash
         run: |
@@ -393,6 +345,7 @@ jobs:
       - name: Set Env Vars
         run: |
           echo "WASM_DIR=${{matrix.runtime-dir}}/target/srtool/${{matrix.build-profile}}/wbuild/${{matrix.package}}" >> $GITHUB_ENV
+          echo "BUILT_WASM_FILENAME=${{matrix.built-wasm-file-name-prefix}}.compact.compressed.wasm" >> $GITHUB_ENV
       # # XXX Keep this step as it lets us skip WASM builds during development/testing
       # - name: Cache WASM for Testing
       #   id: cache-wasm
@@ -403,25 +356,42 @@ jobs:
       - name: Install srtool-cli
         if: steps.cache-wasm.outputs.cache-hit != 'true'
         run: |
+          rustup show
           cargo install --git https://github.com/chevdor/srtool-cli
+          echo "PATH=$HOME/.cargo/bin:$PATH" >> $GITHUB_ENV
+      - name: Test srtool-cli Install
+        run: |
+          echo "PATH: $PATH"
+          which srtool
           srtool --version
       - name: Build Deterministic WASM
         if: steps.cache-wasm.outputs.cache-hit != 'true'
         run: |
-          srtool build \
-            --default-features="on-chain-release-build,no-metadata-docs,${{matrix.features}}" \
+          RUST_LOG=debug SRTOOL_TAG="1.66.1" srtool build \
+            --build-opts="'--features on-chain-release-build,no-metadata-docs,${{matrix.features}}'" \
             --profile=${{matrix.build-profile}} \
-            --package=${{matrix.package}} \
-            --root
+            --package=${{matrix.package}}
+      - name: Check Deterministic WASM Build Exists
+        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        run: file ${{env.WASM_DIR}}/${{env.BUILT_WASM_FILENAME}}
+      - name: Install Subwasm
+        run: |
+          cargo install --locked --git https://github.com/chevdor/subwasm --tag v0.19.1 --force
+          subwasm --version
+      - name: Test WASM file
+        run: |
+          subwasm info ${{env.WASM_DIR}}/${{env.BUILT_WASM_FILENAME}}
+          subwasm info ${{env.WASM_DIR}}/${{env.BUILT_WASM_FILENAME}} | grep "Core version:.*${{matrix.wasm-core-version}}-${{env.RUNTIME_SPEC_VERSION}}" || \
+            (echo "ERROR: WASM Core version didn't match ${{matrix.wasm-core-version}}-${{env.RUNTIME_SPEC_VERSION}}" && exit 1)
 
   verify-js-api-augment:
     needs: build-binaries
     name: Verify JS API Augment
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set Env Vars
         run: |
           echo "BIN_FILENAME=frequency.local.frequency-rococo-local.pr" >> $GITHUB_ENV
@@ -438,16 +408,22 @@ jobs:
         run: npm run lint
         working-directory: js/api-augment
       - name: Download Binaries
+        id: download-binaries
         uses: actions/download-artifact@v3
         with:
           name: artifacts-${{github.run_id}}
           path: ${{env.BIN_DIR}}
+      - name: List Downloaded Binaries
+        run: |
+          download_dir=${{steps.download-binaries.outputs.download-path}}
+          echo "Download dir: $download_dir"
+          echo "Downloaded binaries: $(ls -l $download_dir)"
       - name: Set Binary Permissions
         working-directory: ${{env.BIN_DIR}}
         run: |
           chmod 755 ${{env.BIN_FILENAME}}
       - name: Output Metadata
-        run: ${{env.BIN_DIR}}/${{env.BIN_FILENAME}} export-metadata  --chain=frequency-local --tmp ./js/api-augment/metadata.json
+        run: ${{env.BIN_DIR}}/${{env.BIN_FILENAME}} export-metadata  --chain=frequency-rococo-local --tmp ./js/api-augment/metadata.json
       - name: Build
         run: npm run build
         working-directory: js/api-augment
@@ -471,25 +447,25 @@ jobs:
     needs: build-binaries
     name: Verify Node Docker Images
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl
-          curl -fsSL https://get.docker.com -o get-docker.sh
-          sh get-docker.sh
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set Env Vars
         run: |
           echo "BUILT_BIN_FILENAME=frequency.mainnet.frequency.pr" >> $GITHUB_ENV
           echo "DOCKER_BIN_FILENAME=frequency" >> $GITHUB_ENV
       - name: Download Binaries
+        id: download-binaries
         uses: actions/download-artifact@v3
         with:
           name: artifacts-${{github.run_id}}
           path: ${{env.BIN_DIR}}
+      - name: List Downloaded Binaries
+        run: |
+          download_dir=${{steps.download-binaries.outputs.download-path}}
+          echo "Download dir: $download_dir"
+          echo "Downloaded binaries: $(ls -l $download_dir)"
       - name: Rename Binary
         working-directory: ${{env.BIN_DIR}}
         run: mv ${{env.BUILT_BIN_FILENAME}} ${{env.DOCKER_BIN_FILENAME}}
@@ -498,15 +474,15 @@ jobs:
         run: |
           chmod 755 ${{env.DOCKER_BIN_FILENAME}}
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: "amd64"
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Build collator image in instant seal mode
         env:
           IMAGE_NAME: instant-seal-node
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: false
@@ -514,7 +490,7 @@ jobs:
       - name: Build collator image for local relay chain
         env:
           IMAGE_NAME: collator-node-local
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: false
@@ -525,27 +501,21 @@ jobs:
     if: needs.changes.outputs.ci-docker-image == 'true'
     name: Verify CI Docker Image
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl
-          curl -fsSL https://get.docker.com -o get-docker.sh
-          sh get-docker.sh
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: "amd64"
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Build CI image
         env:
           IMAGE_PATH: tools/ci/docker
           IMAGE_NAME: ci-base-image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: false
@@ -555,22 +525,24 @@ jobs:
     needs: build-binaries
     name: Execute Binary Checks
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y curl file
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set Env Vars
         run: |
           echo "TEST_BIN_FILENAME=frequency.mainnet.frequency.pr" >> $GITHUB_ENV
       - name: Download Binaries
+        id: download-binaries
         uses: actions/download-artifact@v3
         with:
           name: artifacts-${{github.run_id}}
           path: ${{env.BIN_DIR}}
+      - name: List Downloaded Binaries
+        run: |
+          download_dir=${{steps.download-binaries.outputs.download-path}}
+          echo "Download dir: $download_dir"
+          echo "Downloaded binaries: $(ls -l $download_dir)"
       - name: Set Binary Permissions
         working-directory: ${{env.BIN_DIR}}
         run: |
@@ -584,16 +556,10 @@ jobs:
     needs: build-binaries
     name: Check Metadata and Spec Version
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
-    env:
-      GITHUB_PR_LABEL: metadata-mismatch
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y jq
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Set Env Vars
@@ -601,10 +567,16 @@ jobs:
           echo "TEST_BIN_FILENAME=frequency.local.frequency-rococo-local.pr" >> $GITHUB_ENV
           echo "REF_BIN_FILENAME=frequency.local.frequency-rococo-local.main" >> $GITHUB_ENV
       - name: Download Binaries
+        id: download-binaries
         uses: actions/download-artifact@v3
         with:
           name: artifacts-${{github.run_id}}
           path: ${{env.BIN_DIR}}
+      - name: List Downloaded Binaries
+        run: |
+          download_dir=${{steps.download-binaries.outputs.download-path}}
+          echo "Download dir: $download_dir"
+          echo "Downloaded binaries: $(ls -l $download_dir)"
       - name: Set Binary Permissions
         working-directory: ${{env.BIN_DIR}}
         run: |
@@ -615,55 +587,75 @@ jobs:
         working-directory: ${{env.BIN_DIR}}
         run: |
           set -x
-          ./$REF_BIN_FILENAME export-metadata --chain=frequency-local --tmp metadata-ref.json
+          ./$REF_BIN_FILENAME export-metadata --chain=frequency-rococo-local --tmp metadata-ref.json
           metadata_ref=$(cat metadata-ref.json | jq -r .result)
-          ./$TEST_BIN_FILENAME export-metadata --chain=frequency-local --tmp metadata.json
+          ./$TEST_BIN_FILENAME export-metadata --chain=frequency-rococo-local --tmp metadata.json
           metadata=$(cat metadata.json | jq -r .result)
-          match=$([ "$metadata" = "$metadata_ref" ] && echo 'true' || echo 'false')
+          matches=$([ "$metadata" = "$metadata_ref" ] && echo 'true' || echo 'false')
           echo "Metadata matches?: $match"
-          echo "metadata_match=$match" >> $GITHUB_OUTPUT
-      - name: Assign Metadata Mismatch Label
-        if: steps.compare-metadata.outputs.metadata_match != 'true'
+          echo "metadata_matches=$matches" >> $GITHUB_OUTPUT
+      - name: Assign Metadata Changed Label
+        if: steps.compare-metadata.outputs.metadata_matches != 'true'
         uses: actions-ecosystem/action-add-labels@18f1af5e3544586314bbe15c0273249c770b2daf
         with:
-          labels: ${{env.GITHUB_PR_LABEL}}
+          labels: ${{env.PR_LABEL_METADATA_CHANGED}}
       - name: Check Spec Version
-        if: steps.compare-metadata.outputs.metadata_match != 'true'
+        if: steps.compare-metadata.outputs.metadata_matches != 'true'
+        id: check-spec-version
         working-directory: ${{env.BIN_DIR}}
         run: |
+          set -x
           spec_version_ref=$(./$REF_BIN_FILENAME export-runtime-version | jq -r .specVersion)
           spec_version=$(./$TEST_BIN_FILENAME export-runtime-version | jq -r .specVersion)
-          [ $spec_version -gt $spec_version_ref ] || \
-            (echo "ERROR: When metadata is updated, the new spec version \($spec_version\) \
-            must be greater than the latest version on main \($spec_version_ref\)" && exit 1)
-      - name: Remove Metadata Mismatch Label
+          incremented=$([ $spec_version -gt $spec_version_ref ] && echo 'true' || echo 'false')
+          echo "spec_version_ref=$spec_version_ref" >> $GITHUB_OUTPUT
+          echo "spec_version=$spec_version" >> $GITHUB_OUTPUT
+          echo "metadata_version_incremented=$incremented" >> $GITHUB_OUTPUT
+      - name: Assign Metadata Version Not Incremented Label
         if: |
-          (steps.compare-metadata.outputs.metadata_match == 'true') &&
-            contains(github.event.pull_request.labels.*.name, env.GITHUB_PR_LABEL)
-        uses: actions-ecosystem/action-remove-labels@2ce5d41b4b6aa8503e285553f75ed56e0a40bae0
+          (steps.compare-metadata.outputs.metadata_matches != 'true') &&
+            (steps.check-spec-version.outputs.metadata_version_incremented != 'true')
+        uses: actions-ecosystem/action-add-labels@18f1af5e3544586314bbe15c0273249c770b2daf
         with:
-          labels: ${{env.GITHUB_PR_LABEL}}
+          labels: ${{env.PR_LABEL_METADATA_VERSION_NOT_INCREMENTED}}
+      - name: Fail CI
+        if: |
+          (steps.compare-metadata.outputs.metadata_matches != 'true') &&
+            (steps.check-spec-version.outputs.metadata_version_incremented != 'true')
+        working-directory: ${{env.BIN_DIR}}
+        run: |
+          spec_version=${{steps.check-spec-version.outputs.spec_version}}
+          spec_version_ref=${{steps.check-spec-version.outputs.spec_version_ref}}
+          echo "ERROR: When metadata is updated, the new spec version ($spec_version)\
+            must be greater than the latest version on main branch ($spec_version_ref)"
+          exit 1
 
   run-integration-tests:
     if: needs.changes.outputs.run-integration-tests == 'true'
     needs: [build-binaries, verify-js-api-augment]
     name: Run Integration Tests
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Set Env Vars
         run: |
-          echo "BIN_FILENAME=frequency.local.frequency-no-relay.pr" >> $GITHUB_ENV
+          echo "BIN_FILENAME=frequency.dev.frequency-no-relay.pr" >> $GITHUB_ENV
           echo "FREQUENCY_PROCESS_NAME=frequency" >> $GITHUB_ENV
       - name: Download Binaries
+        id: download-binaries
         uses: actions/download-artifact@v3
         with:
           name: artifacts-${{github.run_id}}
           path: ${{env.BIN_DIR}}
+      - name: List Downloaded Binaries
+        run: |
+          download_dir=${{steps.download-binaries.outputs.download-path}}
+          echo "Download dir: $download_dir"
+          echo "Downloaded binaries: $(ls -l $download_dir)"
       - name: Download api-augment tarball
         uses: actions/download-artifact@v3
         with:
@@ -679,17 +671,15 @@ jobs:
           ./${{env.BIN_FILENAME}} \
             -lruntime=debug \
             --dev \
-            --instant-sealing \
+            --sealing=instant \
             --wasm-execution=compiled \
             --execution=wasm \
             --no-telemetry \
             --no-prometheus \
             --port $((30333)) \
-            --rpc-port $((9933)) \
-            --ws-port $((9944)) \
+            --rpc-port $((9944)) \
             --rpc-external \
             --rpc-cors all \
-            --ws-external \
             --rpc-methods=Unsafe \
             --tmp \
             &
@@ -707,8 +697,10 @@ jobs:
         working-directory: integration-tests
       - name: Run Integration Tests
         working-directory: integration-tests
-        run: |
-          WS_PROVIDER_URL="ws://127.0.0.1:9944" npm test
+        env:
+          CHAIN_ENVIRONMENT: dev
+          WS_PROVIDER_URL: ws://127.0.0.1:9944
+        run: npm test
       - name: Stop Local Node
         if: always()
         run: pkill ${{env.FREQUENCY_PROCESS_NAME}}
@@ -717,7 +709,7 @@ jobs:
     needs: build-binaries
     name: Verify Genesis State
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     steps:
       - name: Set Env Vars
         run: |
@@ -726,10 +718,16 @@ jobs:
           echo "BIN_FILENAME_ROCOCO=frequency.rococo.frequency-rococo-testnet.pr" >> $GITHUB_ENV
           echo "BIN_FILENAME_MAINNET=frequency.mainnet.frequency.pr" >> $GITHUB_ENV
       - name: Download Binaries
+        id: download-binaries
         uses: actions/download-artifact@v3
         with:
           name: artifacts-${{github.run_id}}
           path: ${{env.BIN_DIR}}
+      - name: List Downloaded Binaries
+        run: |
+          download_dir=${{steps.download-binaries.outputs.download-path}}
+          echo "Download dir: $download_dir"
+          echo "Downloaded binaries: $(ls -l $download_dir)"
       - name: Set Binary Permissions
         working-directory: ${{env.BIN_DIR}}
         run: |
@@ -758,17 +756,13 @@ jobs:
     if: github.repository == 'LibertyDSNP/frequency'
     name: Run Benchmarks?
     runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
+    container: ghcr.io/libertydsnp/frequency/ci-base-image
     outputs:
       should_run_benchmarks: ${{steps.run-benchmarks.outputs.run}}
       pallets: ${{steps.run-benchmarks.outputs.pallets}}
     steps:
-      - name: Install Required Packages
-        run: |
-          apt-get update
-          apt-get install -y git
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{github.event.pull_request.head.sha}}
       - name: Run Benchmarks?
@@ -790,19 +784,6 @@ jobs:
             echo "run=false" >> $GITHUB_OUTPUT
           fi
 
-  clear-metadata-mismatch-label:
-    name: Clear Metadata Mismatch Label
-    runs-on: ubuntu-20.04
-    container: public.ecr.aws/lts/ubuntu:20.04
-    env:
-      GITHUB_PR_LABEL: metadata-mismatch
-    steps:
-      - name: Clear Metadata Mismatch Label
-        if: contains(github.event.pull_request.labels.*.name, env.GITHUB_PR_LABEL)
-        uses: actions-ecosystem/action-remove-labels@2ce5d41b4b6aa8503e285553f75ed56e0a40bae0
-        with:
-          labels: ${{env.GITHUB_PR_LABEL}}
-
   run-benchmarks:
     if: github.repository == 'LibertyDSNP/frequency' &&
       needs.should-run-benchmarks.outputs.should_run_benchmarks == 'true'
@@ -815,13 +796,13 @@ jobs:
           echo "Running benchmarks..."
           echo "Pallets: ${{needs.should-run-benchmarks.outputs.pallets}}"
       - name: Check Out Repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{secrets.GHA_GIT_COMMIT || github.token}}
           ref: ${{github.event.pull_request.head.sha}}
       - name: Get Current Job Log URL
         id: jobs
-        uses: Tiryoh/gha-jobid-action@603885a199c331cc2f828bcebeb1c4a275f4d6e1
+        uses: Tiryoh/gha-jobid-action@20caeb4d0b3bb798032fffd362747d4d5d58b976
         with:
           github_token: ${{secrets.GITHUB_TOKEN}}
           job_name: "Run Benchmarks"
@@ -838,14 +819,15 @@ jobs:
       - name: Install Required Packages
         run: |
           sudo apt-get update
-          sudo apt install -y protobuf-compiler libclang-dev
+          sudo apt install -y protobuf-compiler libclang-dev clang cmake
       - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@e12eda571dc9a5ee5d58eecf4738ec291c66f295
-        with:
-          toolchain: stable
+        # Match installation steps to CI base docker image
+        run: |
+          curl https://sh.rustup.rs -sSf | bash -s -- -y
+          echo "PATH=$HOME/.cargo/bin:$PATH" >> $GITHUB_ENV
       - name: Update Weights
         run: |
-          set -x
+          rustup show
           pallets_str="${{needs.should-run-benchmarks.outputs.pallets}}"
           echo "Pallets: $pallets_str"
           if [ -z "${pallets_str}" -o $pallets_str = 'all' ]; then

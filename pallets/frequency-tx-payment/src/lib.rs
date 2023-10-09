@@ -22,6 +22,7 @@
 // Substrate macros are tripping the clippy::expect_used lint.
 #![allow(clippy::expect_used)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![feature(rustdoc_missing_doc_code_examples)]
 
 use codec::{Decode, Encode};
 use frame_support::{
@@ -32,7 +33,7 @@ use frame_support::{
 	DefaultNoBound,
 };
 use frame_system::pallet_prelude::*;
-use pallet_transaction_payment::OnChargeTransaction;
+use pallet_transaction_payment::{FeeDetails, InclusionFee, OnChargeTransaction};
 use scale_info::TypeInfo;
 use sp_runtime::{
 	traits::{DispatchInfoOf, PostDispatchInfoOf, SignedExtension, Zero},
@@ -146,7 +147,6 @@ pub mod pallet {
 	// Simple declaration of the `Pallet` type. It is placeholder we use to implement traits and
 	// method.
 	#[pallet::pallet]
-	#[pallet::generate_store(pub (super) trait Store)]
 	pub struct Pallet<T>(_);
 
 	#[pallet::config]
@@ -272,8 +272,47 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Compute the length portion of a fee by invoking the configured `LengthToFee` impl.
+	/// # Arguments
+	/// * `length` - The length of the transaction.
+	/// * `weight` - The weight of the transaction.
+	///
+	/// # Returns
+	/// `FeeDetails` - The fee details for the transaction.
+	pub fn compute_capacity_fee_details(
+		runtime_call: &<T as Config>::RuntimeCall,
+		dispatch_weight: &Weight,
+		len: u32,
+	) -> FeeDetails<BalanceOf<T>> {
+		let calls = T::CapacityCalls::get_inner_calls(runtime_call)
+			.expect("A collection of calls is expected at minimum one.");
+
+		let mut calls_weight_sum = Weight::zero();
+		for inner_call in calls {
+			let call_weight = T::CapacityCalls::get_stable_weight(&inner_call).unwrap_or_default();
+			calls_weight_sum = calls_weight_sum.saturating_add(call_weight);
+		}
+
+		let mut fees = FeeDetails { inclusion_fee: None, tip: Zero::zero() };
+		if !calls_weight_sum.is_zero() {
+			if let Some(weight) = calls_weight_sum.checked_add(dispatch_weight) {
+				let weight_fee = Self::weight_to_fee(weight);
+				let len_fee = Self::length_to_fee(len);
+				let base_fee = Self::weight_to_fee(CAPACITY_EXTRINSIC_BASE_WEIGHT);
+
+				let adjusted_weight_fee =
+					base_fee.saturating_add(weight_fee).saturating_add(len_fee);
+				let tip = Zero::zero();
+				fees = FeeDetails {
+					inclusion_fee: Some(InclusionFee { base_fee, len_fee, adjusted_weight_fee }),
+					tip,
+				};
+			}
+		}
+		fees
+	}
+	/// Compute the length portion of a fee by invoking the configured `LengthToFee` impl.
 	pub fn length_to_fee(length: u32) -> BalanceOf<T> {
-		T::LengthToFee::weight_to_fee(&Weight::from_ref_time(length as u64))
+		T::LengthToFee::weight_to_fee(&Weight::from_parts(length as u64, 0))
 	}
 
 	/// Compute the unadjusted portion of the weight fee by invoking the configured `WeightToFee`

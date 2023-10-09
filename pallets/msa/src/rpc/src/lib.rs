@@ -11,7 +11,7 @@
 use codec::Codec;
 use common_helpers::rpc::map_rpc_result;
 use common_primitives::{
-	msa::{DelegatorId, ProviderId},
+	msa::{DelegatorId, ProviderId, SchemaGrant},
 	node::BlockNumber,
 	schema::SchemaId,
 };
@@ -25,7 +25,7 @@ use pallet_msa_runtime_api::MsaRuntimeApi;
 use rayon::prelude::*;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::{generic::BlockId, traits::Block as BlockT};
+use sp_runtime::traits::Block as BlockT;
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -52,7 +52,7 @@ pub trait MsaApi<BlockHash, AccountId> {
 		&self,
 		delegator_msa_id: DelegatorId,
 		provider_msa_id: ProviderId,
-	) -> RpcResult<Option<Vec<SchemaId>>>;
+	) -> RpcResult<Option<Vec<SchemaGrant<SchemaId, BlockNumber>>>>;
 }
 
 /// The client handler for the API used by Frequency Service RPC with `jsonrpsee`
@@ -93,7 +93,7 @@ where
 		block_number: BlockNumber,
 		schema_id: Option<SchemaId>,
 	) -> RpcResult<Vec<(DelegatorId, bool)>> {
-		let at = BlockId::hash(self.client.info().best_hash);
+		let at = self.client.info().best_hash;
 		let results = delegator_msa_ids
 			.par_iter()
 			.map(|delegator_msa_id| {
@@ -101,7 +101,7 @@ where
 				// api.has_delegation returns  Result<bool, ApiError>), so _or(false) should not happen,
 				// but just in case, protect against panic
 				let has_delegation: bool = match api.has_delegation(
-					&at,
+					at,
 					*delegator_msa_id,
 					provider_msa_id,
 					block_number,
@@ -123,11 +123,11 @@ where
 		&self,
 		delegator_msa_id: DelegatorId,
 		provider_msa_id: ProviderId,
-	) -> RpcResult<Option<Vec<SchemaId>>> {
+	) -> RpcResult<Option<Vec<SchemaGrant<SchemaId, BlockNumber>>>> {
 		let api = self.client.runtime_api();
-		let at = BlockId::hash(self.client.info().best_hash);
+		let at = self.client.info().best_hash;
 		let runtime_api_result =
-			api.get_granted_schemas_by_msa_id(&at, delegator_msa_id, provider_msa_id);
+			api.get_granted_schemas_by_msa_id(at, delegator_msa_id, provider_msa_id);
 		map_rpc_result(runtime_api_result)
 	}
 }
