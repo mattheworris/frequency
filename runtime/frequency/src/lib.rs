@@ -44,7 +44,7 @@ use frame_support::{
 	dispatch::{DispatchClass, DispatchError, GetDispatchInfo, Pays},
 	pallet_prelude::DispatchResultWithPostInfo,
 	parameter_types,
-	traits::{ConstU128, ConstU32, EitherOfDiverse, EqualPrivilegeOnly},
+	traits::{ConstBool, ConstU128, ConstU32, EitherOfDiverse, EqualPrivilegeOnly},
 	weights::{constants::RocksDbWeight, ConstantMultiplier, Weight},
 	Twox128,
 };
@@ -138,6 +138,7 @@ impl Contains<RuntimeCall> for BaseCallFilter {
 				// Create provider and create schema are not allowed in mainnet for now. See propose functions.
 				RuntimeCall::Msa(pallet_msa::Call::create_provider { .. }) => false,
 				RuntimeCall::Schemas(pallet_schemas::Call::create_schema { .. }) => false,
+				RuntimeCall::Schemas(pallet_schemas::Call::create_schema_v2 { .. }) => false,
 				// Everything else is allowed on Mainnet
 				_ => true,
 			}
@@ -167,7 +168,8 @@ impl BaseCallFilter {
 
 			// Block `create_provider` and `create_schema` calls from utility batch
 			RuntimeCall::Msa(pallet_msa::Call::create_provider { .. }) |
-			RuntimeCall::Schemas(pallet_schemas::Call::create_schema { .. }) => false,
+			RuntimeCall::Schemas(pallet_schemas::Call::create_schema { .. }) |
+			RuntimeCall::Schemas(pallet_schemas::Call::create_schema_v2 { .. }) => false,
 
 			// Block `Pays::No` calls from utility batch
 			_ if Self::is_pays_no_call(call) => false,
@@ -249,7 +251,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("frequency"),
 	impl_name: create_runtime_str!("frequency"),
 	authoring_version: 1,
-	spec_version: 56,
+	spec_version: 59,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 1,
@@ -263,7 +265,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("frequency-rococo"),
 	impl_name: create_runtime_str!("frequency"),
 	authoring_version: 1,
-	spec_version: 56,
+	spec_version: 59,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 1,
@@ -320,15 +322,13 @@ impl frame_system::Config for Runtime {
 	/// The lookup mechanism to get account ID from whatever is passed in dispatchers.
 	type Lookup = AccountIdLookup<AccountId, ()>;
 	/// The index type for storing how many extrinsics an account has signed.
-	type Index = Index;
-	/// The index type for blocks.
-	type BlockNumber = BlockNumber;
+	type Nonce = Index;
+	/// The block type.
+	type Block = Block;
 	/// The type for hashing blocks and tries.
 	type Hash = Hash;
 	/// The hashing algorithm used.
 	type Hashing = BlakeTwo256;
-	/// The header type.
-	type Header = generic::Header<BlockNumber, BlakeTwo256>;
 	/// The ubiquitous event type.
 	type RuntimeEvent = RuntimeEvent;
 	/// The ubiquitous origin type.
@@ -498,7 +498,7 @@ impl pallet_balances::Config for Runtime {
 	type ReserveIdentifier = [u8; 8];
 	type MaxHolds = ConstU32<0>;
 	type MaxFreezes = ConstU32<0>;
-	type HoldIdentifier = ();
+	type RuntimeHoldReason = RuntimeHoldReason;
 	type FreezeIdentifier = ();
 }
 // Needs parameter_types! for the Weight type
@@ -829,6 +829,7 @@ impl pallet_aura::Config for Runtime {
 	type AuthorityId = AuraId;
 	type DisabledValidators = ();
 	type MaxAuthorities = AuraMaxAuthorities;
+	type AllowMultipleBlocksPerSlot = ConstBool<false>;
 }
 
 // See https://paritytech.github.io/substrate/master/pallet_collator_selection/index.html for
@@ -856,7 +857,7 @@ impl pallet_collator_selection::Config for Runtime {
 	// Minimum number of candidates that we should have. This is used for disaster recovery.
 	//
 	// This does not take into account the invulnerables.
-	type MinCandidates = CollatorMinCandidates;
+	type MinEligibleCollators = CollatorMinCandidates;
 
 	// Maximum number of invulnerables. This is enforced in code.
 	type MaxInvulnerables = CollatorMaxInvulnerables;
@@ -891,7 +892,7 @@ impl pallet_messages::Config for Runtime {
 	// The maximum number of messages per block
 	type MaxMessagesPerBlock = MessagesMaxPerBlock;
 	// The maximum message payload in bytes
-	type MaxMessagePayloadSizeBytes = MessagesMaxPayloadSizeBytes;
+	type MessagesMaxPayloadSizeBytes = MessagesMaxPayloadSizeBytes;
 
 	/// A set of helper functions for benchmarking.
 	#[cfg(feature = "runtime-benchmarks")]
@@ -974,19 +975,15 @@ impl pallet_utility::Config for Runtime {
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
-	pub enum Runtime where
-		Block = Block,
-		NodeBlock = opaque::Block,
-		UncheckedExtrinsic = UncheckedExtrinsic,
-	{
+	pub enum Runtime {
 		// System support stuff.
-		System: frame_system::{Pallet, Call, Config, Storage, Event<T>} = 0,
+		System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>} = 0,
 		#[cfg(any(not(feature = "frequency-no-relay"), feature = "frequency-lint-check"))]
 		ParachainSystem: cumulus_pallet_parachain_system::{
-			Pallet, Call, Config, Storage, Inherent, Event<T>, ValidateUnsigned,
+			Pallet, Call, Config<T>, Storage, Inherent, Event<T>, ValidateUnsigned,
 		} = 1,
 		Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent} = 2,
-		ParachainInfo: parachain_info::{Pallet, Storage, Config} = 3,
+		ParachainInfo: parachain_info::{Pallet, Storage, Config<T>} = 3,
 
 		// Sudo removed from mainnet Jan 2023
 		#[cfg(any(not(feature = "frequency"), feature = "frequency-lint-check"))]
@@ -1006,14 +1003,14 @@ construct_runtime!(
 		TechnicalCommittee: pallet_collective::<Instance2>::{Pallet, Call, Config<T,I>, Storage, Event<T>, Origin<T>} = 13,
 
 		// Treasury
-		Treasury: pallet_treasury::{Pallet, Call, Storage, Config, Event<T>} = 14,
+		Treasury: pallet_treasury::{Pallet, Call, Storage, Config<T>, Event<T>} = 14,
 
 		// Collator support. The order of these 4 are important and shall not change.
 		Authorship: pallet_authorship::{Pallet, Storage} = 20,
 		CollatorSelection: pallet_collator_selection::{Pallet, Call, Storage, Event<T>, Config<T>} = 21,
 		Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>} = 22,
 		Aura: pallet_aura::{Pallet, Storage, Config<T>} = 23,
-		AuraExt: cumulus_pallet_aura_ext::{Pallet, Storage, Config} = 24,
+		AuraExt: cumulus_pallet_aura_ext::{Pallet, Storage, Config<T>} = 24,
 
 		// Signatures
 		Multisig: pallet_multisig::{Pallet, Call, Storage, Event<T>} = 30,
@@ -1024,7 +1021,7 @@ construct_runtime!(
 		// Frequency related pallets
 		Msa: pallet_msa::{Pallet, Call, Storage, Event<T>} = 60,
 		Messages: pallet_messages::{Pallet, Call, Storage, Event<T>} = 61,
-		Schemas: pallet_schemas::{Pallet, Call, Storage, Event<T>, Config} = 62,
+		Schemas: pallet_schemas::{Pallet, Call, Storage, Event<T>, Config<T>} = 62,
 		StatefulStorage: pallet_stateful_storage::{Pallet, Call, Storage, Event<T>} = 63,
 		Capacity: pallet_capacity::{Pallet, Call, Storage, Event<T>} = 64,
 		FrequencyTxPayment: pallet_frequency_tx_payment::{Pallet, Call, Event<T>} = 65,

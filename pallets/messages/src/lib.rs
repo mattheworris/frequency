@@ -36,7 +36,6 @@
 #![allow(clippy::expect_used)]
 // Ensure we're `no_std` when compiling for Wasm.
 #![cfg_attr(not(feature = "std"), no_std)]
-#![feature(rustdoc_missing_doc_code_examples)]
 // Strong Documentation Lints
 #![deny(
 	rustdoc::broken_intra_doc_links,
@@ -56,7 +55,7 @@ mod types;
 
 use frame_support::{ensure, pallet_prelude::Weight, traits::Get, BoundedVec};
 use sp_runtime::DispatchError;
-use sp_std::{convert::TryInto, prelude::*};
+use sp_std::{convert::TryInto, fmt::Debug, prelude::*};
 
 use codec::Encode;
 use common_primitives::{
@@ -76,12 +75,12 @@ pub use types::*;
 pub use weights::*;
 
 use cid::Cid;
+use frame_system::pallet_prelude::*;
 
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
 	use frame_support::pallet_prelude::*;
-	use frame_system::pallet_prelude::*;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -95,7 +94,7 @@ pub mod pallet {
 		type MsaInfoProvider: MsaLookup + MsaValidator<AccountId = Self::AccountId>;
 
 		/// A type that will validate schema grants
-		type SchemaGrantValidator: SchemaGrantValidator<Self::BlockNumber>;
+		type SchemaGrantValidator: SchemaGrantValidator<BlockNumberFor<Self>>;
 
 		/// A type that will supply schema related information.
 		type SchemaProvider: SchemaProvider<SchemaId>;
@@ -106,7 +105,7 @@ pub mod pallet {
 
 		/// The maximum size of a message payload bytes.
 		#[pallet::constant]
-		type MaxMessagePayloadSizeBytes: Get<u32> + Clone;
+		type MessagesMaxPayloadSizeBytes: Get<u32> + Clone + Debug + MaxEncodedLen;
 
 		#[cfg(feature = "runtime-benchmarks")]
 		/// A set of helper functions for benchmarking.
@@ -118,7 +117,6 @@ pub mod pallet {
 	}
 
 	#[pallet::pallet]
-	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
 
 	/// A permanent storage for messages mapped by block number and schema id.
@@ -129,10 +127,10 @@ pub mod pallet {
 	pub(super) type Messages<T: Config> = StorageDoubleMap<
 		_,
 		Twox64Concat,
-		T::BlockNumber,
+		BlockNumberFor<T>,
 		Twox64Concat,
 		SchemaId,
-		BoundedVec<Message<T::MaxMessagePayloadSizeBytes>, T::MaxMessagesPerBlock>,
+		BoundedVec<Message<T::MessagesMaxPayloadSizeBytes>, T::MaxMessagesPerBlock>,
 		ValueQuery,
 	>;
 
@@ -181,13 +179,13 @@ pub mod pallet {
 			/// The schema for these messages
 			schema_id: SchemaId,
 			/// The block number for these messages
-			block_number: T::BlockNumber,
+			block_number: BlockNumberFor<T>,
 		},
 	}
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-		fn on_initialize(_current: T::BlockNumber) -> Weight {
+		fn on_initialize(_current: BlockNumberFor<T>) -> Weight {
 			<BlockMessageIndex<T>>::set(0u16);
 			// allocates 1 read and 1 write for any access of `MessageIndex` in every block
 			T::DbWeight::get().reads(1u64).saturating_add(T::DbWeight::get().writes(1u64))
@@ -227,7 +225,7 @@ pub mod pallet {
 			let provider_key = ensure_signed(origin)?;
 			let cid_binary = Self::validate_cid(&cid)?;
 			let payload_tuple: OffchainPayloadType = (cid_binary, payload_length);
-			let bounded_payload: BoundedVec<u8, T::MaxMessagePayloadSizeBytes> = payload_tuple
+			let bounded_payload: BoundedVec<u8, T::MessagesMaxPayloadSizeBytes> = payload_tuple
 				.encode()
 				.try_into()
 				.map_err(|_| Error::<T>::ExceedsMaxMessagePayloadSizeBytes)?;
@@ -282,7 +280,7 @@ pub mod pallet {
 		) -> DispatchResult {
 			let provider_key = ensure_signed(origin)?;
 
-			let bounded_payload: BoundedVec<u8, T::MaxMessagePayloadSizeBytes> =
+			let bounded_payload: BoundedVec<u8, T::MessagesMaxPayloadSizeBytes> =
 				payload.try_into().map_err(|_| Error::<T>::ExceedsMaxMessagePayloadSizeBytes)?;
 
 			if let Some(schema) = T::SchemaProvider::get_schema_by_id(schema_id) {
@@ -342,9 +340,9 @@ impl<T: Config> Pallet<T> {
 	pub fn add_message(
 		provider_msa_id: MessageSourceId,
 		msa_id: Option<MessageSourceId>,
-		payload: BoundedVec<u8, T::MaxMessagePayloadSizeBytes>,
+		payload: BoundedVec<u8, T::MessagesMaxPayloadSizeBytes>,
 		schema_id: SchemaId,
-		current_block: T::BlockNumber,
+		current_block: BlockNumberFor<T>,
 	) -> Result<bool, DispatchError> {
 		<Messages<T>>::try_mutate(
 			current_block,
@@ -390,7 +388,7 @@ impl<T: Config> Pallet<T> {
 	pub fn get_messages_by_schema_and_block(
 		schema_id: SchemaId,
 		schema_payload_location: PayloadLocation,
-		block_number: T::BlockNumber,
+		block_number: BlockNumberFor<T>,
 	) -> Vec<MessageResponse> {
 		let block_number_value: u32 = block_number.try_into().unwrap_or_default();
 
