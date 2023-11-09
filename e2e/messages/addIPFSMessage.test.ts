@@ -95,9 +95,7 @@ describe("Add Offchain Message", function () {
         const f = ExtrinsicHelper.addIPFSMessage(keys, schemaId, ipfs_cid_64, ipfs_payload_len);
         const { target: event } = await f.fundAndSend(fundingSource);
 
-        assert.notEqual(event, undefined, "should have returned a MessagesStored event");
-        assert.deepEqual(event?.data.schemaId, schemaId, 'schema ids should be equal');
-        assert.notEqual(event?.data.blockNumber, undefined, 'should have a block number');
+        assert.notEqual(event, undefined, "should have returned a MessagesInBlock event");
     });
 
     it("should successfully retrieve added message and returned CID should have Base32 encoding", async function () {
@@ -112,10 +110,7 @@ describe("Add Offchain Message", function () {
             const f = ExtrinsicHelper.addOnChainMessage(keys, dummySchemaId, "0xdeadbeef");
             const { target: event } = await f.fundAndSend(fundingSource);
 
-            assert.notEqual(event, undefined, "should have returned a MessagesStored event");
-            assert.deepEqual(event?.data.schemaId, dummySchemaId, 'schema ids should be equal');
-            assert.notEqual(event?.data.blockNumber, undefined, 'should have a block number');
-
+            assert.notEqual(event, undefined, "should have returned a MessagesInBlock event");
             const get = await firstValueFrom(ExtrinsicHelper.api.rpc.messages.getBySchemaId(
                     dummySchemaId,
                     { from_block: starting_block,
