@@ -110,7 +110,8 @@ jobs:
     # needs: changes
     # if: needs.changes.outputs.rust == 'true'
     name: ${{ matrix.platform.os_name }} with rust ${{ matrix.toolchain }}
-    runs-on: ${{ matrix.platform.os }}
+    # runs-on: ${{ matrix.platform.os }}
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
