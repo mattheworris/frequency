@@ -110,15 +110,17 @@ jobs:
     # needs: changes
     # if: needs.changes.outputs.rust == 'true'
     name: ${{ matrix.platform.os_name }} with rust ${{ matrix.toolchain }}
-    # runs-on: ${{ matrix.platform.os }}
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64, build, v2]
+    container: ghcr.io/libertydsnp/frequency/ci-base-image:latest
+    env:
+      CROSS_CONTAINER_IN_CONTAINER: true
     strategy:
       fail-fast: false
       matrix:
         platform:
           - os_name: Linux-aarch64
             os: ubuntu-22.04
-            target: aarch64-unknown-linux-musl
+            target: aarch64-unknown-linux-gnu
             binary: frequency
           - os_name: Linux-x86_64
             os: ubuntu-22.04
@@ -135,7 +137,30 @@ jobs:
         toolchain:
           - stable
     steps:
-      - run: echo "Cross Build ${{ matrix.platform.os_name }} with rust ${{ matrix.toolchain }}"
+      - name: Cross Build Worrkflow
+        run: echo "Cross Build ${{ matrix.platform.os_name }} with rust ${{ matrix.toolchain }}"
+      # TODO: Don't need this if we use ci-base-image
+      # - name: Install Required Packages for Linux
+      #   if: matrix.platform.os_name == 'Linux-x86_64' || matrix.platform.os_name == 'Linux-aarch64'
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt install -y protobuf-compiler libclang-dev clang cmake
+      #     export PROTOC=/usr/bin/protoc
+      #     echo "PROTOC=$PROTOC" >> $GITHUB_ENV
+      #     echo '********************************************************'
+      #     echo $PROTOC
+      #     protoc --version
+      #     echo '********************************************************'
+      # - name: Install Required Packages for macOS
+      #   if: matrix.platform.os_name == 'macOS-x86_64' || matrix.platform.os_name == 'macOS-aarch64'
+      #   run: |
+      #     brew install protobuf
+      #     export PROTOC=/opt/homebrew/bin/protoc
+      #     echo "PROTOC=$PROTOC" >> $GITHUB_ENV
+      #     echo '********************************************************'
+      #     echo $PROTOC
+      #     protoc --version
+      #     echo '********************************************************'
       - uses: actions/checkout@v4
       - name: Build Binary
         uses: ./.github/workflows/common/rust-cross
@@ -143,7 +168,7 @@ jobs:
           command: "build"
           target: ${{ matrix.platform.target }}
           toolchain: ${{ matrix.toolchain }}
-          args: "--release --features frequency-no-relay"
+          args: "--features frequency-no-relay"
           strip: true
       # - name: Rename Binary (linux and macos)
       #   run: mv target/${{ matrix.platform.target }}/release/frequency ${{ matrix.platform.binary }}
@@ -786,7 +811,7 @@ jobs:
     steps:
       - name: Set Env Vars
         run: |
-          echo "EXPECTED_GENESIS_STATE_PASEO=0x000000000000000000000000000000000000000000000000000000000000000000d1912c5cd40e89fe2f4e1391801d17f6905cf84d961cbf4abb49139f03c2d85503170a2e7597b7b7e3d84c05391d139a62b157e78786d8c082f29dcf4c11131400" >> $GITHUB_ENV
+          echo "EXPECTED_GENESIS_STATE_PASEO=0x000000000000000000000000000000000000000000000000000000000000000000805f6ddb6879aa31316a38c149e52ffe4e9f2a193e966ddcf3b6a2cb5846e96903170a2e7597b7b7e3d84c05391d139a62b157e78786d8c082f29dcf4c11131400" >> $GITHUB_ENV
           echo "EXPECTED_GENESIS_STATE_ROCOCO=0x000000000000000000000000000000000000000000000000000000000000000000e3495742b019f5ad49dff7de4040bc965b75eaf46769c24db1027d4ff86fc92703170a2e7597b7b7e3d84c05391d139a62b157e78786d8c082f29dcf4c11131400" >> $GITHUB_ENV
           echo "EXPECTED_GENESIS_STATE_MAINNET=0x000000000000000000000000000000000000000000000000000000000000000000393a2a0f7778716d006206c5a4787cbf2ea3b26a67379b7a38ee54519d7fd4be03170a2e7597b7b7e3d84c05391d139a62b157e78786d8c082f29dcf4c11131400" >> $GITHUB_ENV
           echo "BIN_FILENAME_TESTNET=frequency.testnet.frequency-testnet.pr" >> $GITHUB_ENV
